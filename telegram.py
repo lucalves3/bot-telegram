@@ -22,5 +22,9 @@ def send(chat_id, text, preview=True):
     )
 
 
+def send_photo(chat_id, photo_url, caption):
+    return _call("sendPhoto", chat_id=chat_id, photo=photo_url, caption=caption[:1024], parse_mode="HTML")
+
+
 def get_updates(offset=None, timeout=25):
     return _call("getUpdates", offset=offset, timeout=timeout, allowed_updates=["message"])

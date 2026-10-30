@@ -31,8 +31,19 @@ def chat_id():
     return os.getenv("TELEGRAM_CHAT_ID") or db.get_setting("chat_id")
 
 
+def notify(cid, text, image=None):
+    """Envia com a foto do produto; se a foto falhar, manda só o texto."""
+    if image:
+        try:
+            return telegram.send_photo(cid, image, text)
+        except Exception as e:
+            print(f"[foto] {e}")
+    return telegram.send(cid, text, preview=not image)
+
+
 def check_item(item):
-    price = scraper.fetch_price(item["url"], item["selector"])
+    info = scraper.fetch_info(item["url"], item["selector"])
+    price = info["price"]
     prev = item["last_price"]
     db.record_price(item["id"], price)
 
@@ -53,7 +64,7 @@ def check_item(item):
         lines.append(item["url"])
         cid = chat_id()
         if cid:
-            telegram.send(cid, "\n".join(lines))
+            notify(cid, "\n".join(lines), info["image"])
         else:
             print("Sem chat_id: mande /start pro bot.")
         db.set_alert_price(item["id"], price)
@@ -93,22 +104,21 @@ def send_hits(cid, w, hits):
         return
     host = urlsplit(w["url"]).netloc
     shown = hits[:MAX_HITS]
-    head = f"🛒 <b>{html.escape(w['name'])}</b>: {len(hits)} abaixo de {brl(w['max_unit'])}/un"
-    blocks = [
-        f"{n}. <b>{html.escape(h['title'][:90])}</b>\n"
-        f"{brl(h['price'])} · {h['units']} un · <b>{brl(h['unit'])}/un</b>\n"
-        f"https://{host}/dp/{h['asin']}"
-        for n, h in enumerate(shown, 1)
-    ]
+    telegram.send(
+        cid,
+        f"🛒 <b>{html.escape(w['name'])}</b>: {len(hits)} abaixo de {brl(w['max_unit'])}/un",
+        preview=False,
+    )
+    for h in shown:
+        caption = (
+            f"<b>{html.escape(h['title'][:90])}</b>\n"
+            f"{brl(h['price'])} · {h['units']} un · <b>{brl(h['unit'])}/un</b>\n"
+            f"https://{host}/dp/{h['asin']}"
+        )
+        notify(cid, caption, h.get("image"))
+        time.sleep(1)
     if len(hits) > len(shown):
-        blocks.append(f"+ {len(hits) - len(shown)} outros")
-    msg = head
-    for b in blocks:
-        if len(msg) + len(b) > 3800:
-            telegram.send(cid, msg, preview=False)
-            msg = ""
-        msg += ("\n\n" if msg else "") + b
-    telegram.send(cid, msg, preview=False)
+        telegram.send(cid, f"+ {len(hits) - len(shown)} outros", preview=False)
 
 
 def check_all():
@@ -236,10 +246,12 @@ def handle(text, cid, uid=None):
         except Exception as e:
             db.remove_watch(w["id"])
             return telegram.send(cid, f"Não consegui ler a listagem: {html.escape(str(e))}")
-        if hits:
-            send_hits(cid, w, hits)
-        else:
-            telegram.send(cid, "Nada abaixo do limite agora. Aviso quando aparecer.")
+        if not hits:
+            return telegram.send(cid, "Nada abaixo do limite agora. Aviso quando aparecer.")
+        dest = chat_id() or cid
+        send_hits(dest, w, hits)  # os achados vão pro grupo de avisos
+        if str(dest) != str(cid):
+            telegram.send(cid, f"{len(hits)} achado(s) enviados no grupo.")
     elif cmd == "/categorias":
         ws = db.list_watches()
         if not ws:

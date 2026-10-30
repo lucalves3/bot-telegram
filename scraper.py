@@ -125,6 +125,14 @@ def _title(soup):
     return soup.title.get_text(strip=True) if soup.title else ""
 
 
+def _image(soup):
+    og = soup.find("meta", attrs={"property": "og:image"})
+    if og and og.get("content"):
+        return og["content"]
+    img = soup.select_one("#landingImage")
+    return (img.get("src") if img else None) or None
+
+
 def fetch_price(url, selector=None):
     return fetch_info(url, selector)["price"]
 
@@ -135,6 +143,7 @@ def fetch_info(url, selector=None):
     r.raise_for_status()
     soup = BeautifulSoup(r.text, "html.parser")
     title = _title(soup)
+    image = _image(soup)
 
     selector = selector or DEFAULT_SELECTORS.get(_store(url))
     if selector:
@@ -142,12 +151,12 @@ def fetch_info(url, selector=None):
         if el:
             p = parse_price(el.get("content") or el.get_text())
             if p:
-                return {"price": p, "title": title}
+                return {"price": p, "title": title, "image": image}
         raise RuntimeError(f"seletor '{selector}' não encontrou preço")
 
     price = _from_jsonld(soup) or _from_meta(soup)
     if price:
-        return {"price": price, "title": title}
+        return {"price": price, "title": title, "image": image}
     raise RuntimeError("preço não encontrado automaticamente; informe um seletor CSS")
 
 
@@ -178,6 +187,15 @@ def fetch_listing(url, pages=2):
             if not asin or asin in seen or not price or not title:
                 continue
             seen.add(asin)
-            out.append({"asin": asin, "title": title, "price": price, "units": parse_units(title)})
+            img = card.select_one("img.s-image")
+            out.append(
+                {
+                    "asin": asin,
+                    "title": title,
+                    "price": price,
+                    "units": parse_units(title),
+                    "image": img.get("src") if img else None,
+                }
+            )
         time.sleep(2)
     return out
