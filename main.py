@@ -78,8 +78,15 @@ def handle(text, cid):
     parts = text.strip().split()
     cmd = parts[0].split("@")[0].lower()
 
-    if cmd in ("/start", "/help"):
+    allowed = chat_id()
+    if allowed and str(cid) != str(allowed):
+        return  # só o chat configurado pode dar comandos
+    if not allowed:
+        if cmd != "/start":
+            return  # nenhum chat configurado ainda: só /start é aceito
         db.set_setting("chat_id", cid)
+
+    if cmd in ("/start", "/help"):
         telegram.send(cid, HELP)
     elif cmd == "/add":
         body = text.split(None, 1)[1] if len(parts) > 1 else ""
