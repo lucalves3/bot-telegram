@@ -54,3 +54,8 @@ preço só por JavaScript ou bloqueiam bots vão precisar de Playwright (ainda n
 
 - `python main.py run`: bot + checagem a cada `CHECK_INTERVAL_MIN` (padrão 60 min).
 - `python main.py check`: uma checagem só, para o Agendador de Tarefas do Windows.
+
+## Configurar pelo privado
+
+Com `ADMIN_IDS` definido, o admin pode mandar os comandos direto no privado do bot.
+As respostas ficam no privado e só os avisos de preço vão pro grupo (`TELEGRAM_CHAT_ID`).

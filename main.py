@@ -74,8 +74,12 @@ HELP = (
 )
 
 
+def admin_ids():
+    return {a.strip() for a in os.getenv("ADMIN_IDS", "").split(",") if a.strip()}
+
+
 def is_admin(uid):
-    admins = {a.strip() for a in os.getenv("ADMIN_IDS", "").split(",") if a.strip()}
+    admins = admin_ids()
     return not admins or str(uid) in admins
 
 
@@ -87,12 +91,16 @@ def handle(text, cid, uid=None):
         return  # só os usuários em ADMIN_IDS podem dar comandos
 
     allowed = chat_id()
-    if allowed and str(cid) != str(allowed):
-        return  # só o chat configurado pode dar comandos
+    # no privado (chat id == id do usuário) o admin pode configurar; as respostas
+    # ficam lá e só os avisos de preço vão pro grupo
+    in_dm = bool(admin_ids()) and str(cid) == str(uid)
+    if allowed and str(cid) != str(allowed) and not in_dm:
+        return  # só o chat configurado (ou o privado do admin) pode dar comandos
     if not allowed:
         if cmd != "/start":
             return  # nenhum chat configurado ainda: só /start é aceito
         db.set_setting("chat_id", cid)
+        telegram.send(cid, "Chat de avisos definido.")
 
     if cmd in ("/start", "/help"):
         telegram.send(cid, HELP)
