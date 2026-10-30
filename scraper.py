@@ -98,11 +98,35 @@ def _from_meta(soup):
     return None
 
 
+UNITS_RE = re.compile(r"(\d{1,4})\s*(?:unidades?|un\b|fraldas?|tiras?|pe[cç]as?)", re.I)
+
+
+def parse_units(title):
+    """Quantidade de unidades do pacote lida do título ('46 Unidades' -> 46)."""
+    m = UNITS_RE.search(title or "")
+    return int(m.group(1)) if m else None
+
+
+def _title(soup):
+    el = soup.select_one("#productTitle")
+    if el:
+        return el.get_text(strip=True)
+    og = soup.find("meta", attrs={"property": "og:title"})
+    if og and og.get("content"):
+        return og["content"].strip()
+    return soup.title.get_text(strip=True) if soup.title else ""
+
+
 def fetch_price(url, selector=None):
-    """Retorna o preço (float) ou levanta RuntimeError se não achar."""
+    return fetch_info(url, selector)["price"]
+
+
+def fetch_info(url, selector=None):
+    """Retorna {'price': float, 'title': str} ou levanta RuntimeError se não achar o preço."""
     r = requests.get(url, headers=HEADERS, timeout=20)
     r.raise_for_status()
     soup = BeautifulSoup(r.text, "html.parser")
+    title = _title(soup)
 
     selector = selector or DEFAULT_SELECTORS.get(_store(url))
     if selector:
@@ -110,10 +134,10 @@ def fetch_price(url, selector=None):
         if el:
             p = parse_price(el.get("content") or el.get_text())
             if p:
-                return p
+                return {"price": p, "title": title}
         raise RuntimeError(f"seletor '{selector}' não encontrou preço")
 
     price = _from_jsonld(soup) or _from_meta(soup)
     if price:
-        return price
+        return {"price": price, "title": title}
     raise RuntimeError("preço não encontrado automaticamente; informe um seletor CSS")

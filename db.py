@@ -37,14 +37,23 @@ def init():
             );
             """
         )
+        cols = {r["name"] for r in c.execute("PRAGMA table_info(items)")}
+        if "units" not in cols:
+            c.execute("ALTER TABLE items ADD COLUMN units INTEGER")
 
 
-def add_item(name, url, target=None, selector=None):
+def add_item(name, url, target=None, selector=None, units=None):
     with conn() as c:
         c.execute(
-            "INSERT INTO items (name, url, target, selector) VALUES (?, ?, ?, ?)",
-            (name, url, target, selector),
+            "INSERT INTO items (name, url, target, selector, units) VALUES (?, ?, ?, ?, ?)",
+            (name, url, target, selector, units),
         )
+
+
+def set_units(item_id, units):
+    with conn() as c:
+        cur = c.execute("UPDATE items SET units = ? WHERE id = ?", (units, item_id))
+        return cur.rowcount > 0
 
 
 def list_items():

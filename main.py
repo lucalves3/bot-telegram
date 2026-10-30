@@ -22,6 +22,10 @@ def brl(v):
     return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def per_unit(price, units):
+    return f"{brl(price / units)}/un" if price and units else None
+
+
 def chat_id():
     return os.getenv("TELEGRAM_CHAT_ID") or db.get_setting("chat_id")
 
@@ -38,6 +42,9 @@ def check_item(item):
     should_alert = below_target and (dropped if target is None else True)
     if should_alert and (last_alert is None or price < last_alert):
         lines = [f"📉 <b>{html.escape(item['name'])}</b>", f"Agora: <b>{brl(price)}</b>"]
+        pu = per_unit(price, item["units"])
+        if pu:
+            lines[-1] += f" ({pu})"
         if prev is not None and prev != price:
             lines.append(f"Antes: {brl(prev)}")
         if target is not None:
@@ -69,6 +76,7 @@ HELP = (
     "/add &lt;url&gt; [preço-alvo] [seletor CSS] - monitorar item\n"
     "/lista - itens e últimos preços\n"
     "/remover &lt;id&gt; - parar de monitorar\n"
+    "/unidades &lt;id&gt; &lt;qtd&gt; - corrigir a quantidade do pacote (preço por unidade)\n"
     "/checar - checar agora\n"
     "Nome do item: coloque depois do link com |, ex.: /add url 1500 | Meu item"
 )
@@ -113,21 +121,23 @@ def handle(text, cid, uid=None):
         url = scraper.normalize_url(args[0])
         target = scraper.parse_price(args[1]) if len(args) > 1 else None
         selector = " ".join(args[2:]) or None
-        name = name.strip() or url[:50]
         try:
-            price = scraper.fetch_price(url, selector)
+            info = scraper.fetch_info(url, selector)
         except Exception as e:
             return telegram.send(cid, f"Não consegui ler o preço: {html.escape(str(e))}")
+        price, title = info["price"], info["title"]
+        name = name.strip() or title[:80] or url[:50]
+        units = scraper.parse_units(title)
         try:
-            db.add_item(name, url, target, selector)
+            db.add_item(name, url, target, selector, units)
         except Exception:
             return telegram.send(cid, "Esse link já está sendo monitorado.")
         item = [i for i in db.list_items() if i["url"] == url][0]
         db.record_price(item["id"], price)
-        telegram.send(
-            cid,
-            f"✅ Monitorando <b>{html.escape(name)}</b>\nPreço atual: {brl(price)}\n{url}",
-        )
+        msg = f"✅ Monitorando <b>{html.escape(name)}</b> (id {item['id']})\nPreço atual: {brl(price)}"
+        if units:
+            msg += f"\n{units} unidades: {per_unit(price, units)}"
+        telegram.send(cid, f"{msg}\n{url}")
     elif cmd == "/lista":
         items = db.list_items()
         if not items:
@@ -135,12 +145,23 @@ def handle(text, cid, uid=None):
         out = []
         for i in items:
             now = brl(i["last_price"]) if i["last_price"] else "-"
+            pu = per_unit(i["last_price"], i["units"])
+            now += f" ({pu})" if pu else ""
             alvo = f" (alvo {brl(i['target'])})" if i["target"] else ""
             out.append(f"{i['id']}. <b>{html.escape(i['name'])}</b>: {now}{alvo}")
         telegram.send(cid, "\n".join(out))
     elif cmd == "/remover":
         ok = len(parts) > 1 and parts[1].isdigit() and db.remove_item(int(parts[1]))
         telegram.send(cid, "Removido." if ok else "Id não encontrado. Veja /lista.")
+    elif cmd == "/unidades":
+        ok = (
+            len(parts) > 2
+            and parts[1].isdigit()
+            and parts[2].isdigit()
+            and int(parts[2]) > 0
+            and db.set_units(int(parts[1]), int(parts[2]))
+        )
+        telegram.send(cid, "Unidades atualizadas." if ok else "Uso: /unidades &lt;id&gt; &lt;quantidade&gt;")
     elif cmd == "/checar":
         telegram.send(cid, "Checando...")
         check_all()
