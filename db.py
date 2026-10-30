@@ -35,7 +35,8 @@ def init():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
                 url TEXT NOT NULL UNIQUE,
-                max_unit REAL NOT NULL
+                max_unit REAL,
+                max_total REAL
             );
             CREATE TABLE IF NOT EXISTS seen (
                 watch_id INTEGER NOT NULL,
@@ -49,6 +50,24 @@ def init():
             );
             """
         )
+        watch_cols = {r["name"]: r for r in c.execute("PRAGMA table_info(watches)")}
+        if watch_cols["max_unit"]["notnull"] or "max_total" not in watch_cols:
+            # banco antigo: max_unit era obrigatório e não havia max_total
+            c.executescript(
+                """
+                ALTER TABLE watches RENAME TO watches_old;
+                CREATE TABLE watches (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    url TEXT NOT NULL UNIQUE,
+                    max_unit REAL,
+                    max_total REAL
+                );
+                INSERT INTO watches (id, name, url, max_unit)
+                    SELECT id, name, url, max_unit FROM watches_old;
+                DROP TABLE watches_old;
+                """
+            )
         cols = {r["name"] for r in c.execute("PRAGMA table_info(items)")}
         if "units" not in cols:
             c.execute("ALTER TABLE items ADD COLUMN units INTEGER")
@@ -112,9 +131,12 @@ def set_setting(key, value):
         )
 
 
-def add_watch(name, url, max_unit):
+def add_watch(name, url, max_unit=None, max_total=None):
     with conn() as c:
-        c.execute("INSERT INTO watches (name, url, max_unit) VALUES (?, ?, ?)", (name, url, max_unit))
+        c.execute(
+            "INSERT INTO watches (name, url, max_unit, max_total) VALUES (?, ?, ?, ?)",
+            (name, url, max_unit, max_total),
+        )
         return c.execute("SELECT * FROM watches WHERE url = ?", (url,)).fetchone()
 
 

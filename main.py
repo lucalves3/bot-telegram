@@ -78,26 +78,44 @@ MAX_HITS = 15
 
 
 def check_watch(w):
-    """Lê a listagem e devolve os produtos novos (ou mais baratos) abaixo do limite por unidade."""
+    """Lê a listagem e devolve os produtos novos (ou 5%+ mais baratos) que passam nos alvos da busca.
+
+    Alvos: max_unit (R$/un), max_total (R$ do produto); sem nenhum, aceita qualquer preço.
+    """
     seen = db.get_seen(w["id"])
-    hits, expensive = [], []
+    hits, rearm = [], []
     for p in scraper.fetch_listing(w["url"]):
-        title = p["title"].lower()
-        if not p["units"] or any(x in title for x in scraper.EXCLUDE_WORDS):
+        if any(x in p["title"].lower() for x in scraper.EXCLUDE_WORDS):
             continue
-        unit = p["price"] / p["units"]
-        if unit >= w["max_unit"]:
+        unit = p["price"] / p["units"] if p["units"] else None
+        ok = True
+        if w["max_unit"] is not None:
+            ok = unit is not None and unit < w["max_unit"]
+        if ok and w["max_total"] is not None:
+            ok = p["price"] <= w["max_total"]
+        if not ok:
             if p["asin"] in seen:
-                expensive.append(p["asin"])  # voltou a ficar caro: rearma o aviso
+                rearm.append(p["asin"])  # saiu da faixa: rearma o aviso
             continue
+        metric = unit if unit is not None else p["price"]
         last = seen.get(p["asin"])
-        if last is None or unit < last * 0.95:
-            hits.append({**p, "unit": unit})
-    db.forget_seen(w["id"], expensive)
-    hits.sort(key=lambda h: h["unit"])
-    for h in hits:
-        db.set_seen(w["id"], h["asin"], h["unit"])
+        if last is None or metric < last * 0.95:
+            hits.append({**p, "unit": unit, "metric": metric})
+    db.forget_seen(w["id"], rearm)
+    hits.sort(key=lambda h: (h["unit"] is None, h["unit"] if h["unit"] is not None else h["price"]))
+    # só marca como visto o que vai ser enviado; o resto sai nas próximas checagens
+    for h in hits[:MAX_HITS]:
+        db.set_seen(w["id"], h["asin"], h["metric"])
     return hits
+
+
+def describe_target(w):
+    parts = []
+    if w["max_unit"] is not None:
+        parts.append(f"abaixo de {brl(w['max_unit'])}/un")
+    if w["max_total"] is not None:
+        parts.append(f"até {brl(w['max_total'])}")
+    return " e ".join(parts) or "qualquer preço"
 
 
 def send_hits(cid, w, hits):
@@ -107,20 +125,19 @@ def send_hits(cid, w, hits):
     shown = hits[:MAX_HITS]
     telegram.send(
         cid,
-        f"🛒 <b>{html.escape(w['name'])}</b>: {len(hits)} abaixo de {brl(w['max_unit'])}/un",
+        f"🛒 <b>{html.escape(w['name'])}</b>: {len(hits)} produto(s), {describe_target(w)}",
         preview=False,
     )
     for h in shown:
         product_url = affiliate.link(f"https://{host}/dp/{h['asin']}")
-        caption = (
-            f"<b>{html.escape(h['title'][:90])}</b>\n"
-            f"{brl(h['price'])} · {h['units']} un · <b>{brl(h['unit'])}/un</b>\n"
-            f"{product_url}"
-        )
+        price_line = brl(h["price"])
+        if h["unit"] is not None:
+            price_line += f" · {h['units']} un · <b>{brl(h['unit'])}/un</b>"
+        caption = f"<b>{html.escape(h['title'][:90])}</b>\n{price_line}\n{product_url}"
         notify(cid, caption, h.get("image"))
         time.sleep(1)
     if len(hits) > len(shown):
-        telegram.send(cid, f"+ {len(hits) - len(shown)} outros", preview=False)
+        telegram.send(cid, f"+ {len(hits) - len(shown)} na próxima checagem", preview=False)
 
 
 def check_all():
@@ -148,7 +165,8 @@ HELP = (
     "/lista - itens e últimos preços\n"
     "/remover &lt;id&gt; - parar de monitorar\n"
     "/unidades &lt;id&gt; &lt;qtd&gt; - corrigir a quantidade do pacote (preço por unidade)\n"
-    "/categoria &lt;link da busca Amazon&gt; [máx R$/un] | Nome - avisa de fraldas abaixo do preço por unidade (padrão R$ 1,00)\n"
+    "/categoria &lt;link da busca Amazon&gt; [alvo] | Nome - avisa dos produtos da busca. "
+    "Alvo: 1/un (preço por unidade) e/ou 50 (preço total); sem alvo, avisa de tudo\n"
     "/categorias - buscas monitoradas\n"
     "/remover_cat &lt;id&gt; - parar uma busca\n"
     "/checar - checar agora\n"
@@ -232,24 +250,33 @@ def handle(text, cid, uid=None):
         main_part, _, name = body.partition("|")
         args = main_part.split()
         if not args:
-            return telegram.send(cid, "Uso: /categoria &lt;link da busca&gt; [máx R$/un] | Nome")
+            return telegram.send(cid, "Uso: /categoria &lt;link da busca&gt; [alvo] | Nome")
         url = scraper.normalize_url(args[0])
         if not scraper.is_amazon(url):
             return telegram.send(cid, "Por enquanto só links de busca da Amazon.")
-        max_unit = (scraper.parse_price(args[1]) if len(args) > 1 else None) or 1.0
-        name = name.strip() or "Fraldas"
+        max_unit = max_total = None
+        for tok in args[1:]:
+            tok = tok.lower()
+            if tok.endswith("/un"):
+                max_unit = scraper.parse_price(tok[:-3])
+            else:
+                max_total = scraper.parse_price(tok)
+        name = name.strip() or "Categoria"
         try:
-            w = db.add_watch(name, url, max_unit)
+            w = db.add_watch(name, url, max_unit, max_total)
         except Exception:
             return telegram.send(cid, "Essa busca já está sendo monitorada.")
-        telegram.send(cid, f"✅ Monitorando <b>{html.escape(name)}</b> (id {w['id']}), abaixo de {brl(max_unit)}/un. Lendo...")
+        telegram.send(
+            cid,
+            f"✅ Monitorando <b>{html.escape(name)}</b> (id {w['id']}): {describe_target(w)}. Lendo...",
+        )
         try:
             hits = check_watch(w)
         except Exception as e:
             db.remove_watch(w["id"])
             return telegram.send(cid, f"Não consegui ler a listagem: {html.escape(str(e))}")
         if not hits:
-            return telegram.send(cid, "Nada abaixo do limite agora. Aviso quando aparecer.")
+            return telegram.send(cid, "Nada que passe nos alvos agora. Aviso quando aparecer.")
         dest = chat_id() or cid
         send_hits(dest, w, hits)  # os achados vão pro grupo de avisos
         if str(dest) != str(cid):
@@ -260,7 +287,7 @@ def handle(text, cid, uid=None):
             return telegram.send(cid, "Nenhuma busca. Use /categoria.")
         telegram.send(
             cid,
-            "\n".join(f"{w['id']}. <b>{html.escape(w['name'])}</b>: abaixo de {brl(w['max_unit'])}/un" for w in ws),
+            "\n".join(f"{w['id']}. <b>{html.escape(w['name'])}</b>: {describe_target(w)}" for w in ws),
         )
     elif cmd == "/remover_cat":
         ok = len(parts) > 1 and parts[1].isdigit() and db.remove_watch(int(parts[1]))

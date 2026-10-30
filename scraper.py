@@ -103,7 +103,13 @@ def _from_meta(soup):
     return None
 
 
-UNITS_RE = re.compile(r"(\d{1,4})\s*(?:unidades?|un\b|fraldas?|tiras?|pe[cç]as?)", re.I)
+UNIT_WORDS = r"(?:unidades?|un\b|fraldas?|tiras?|pe[cç]as?|len[cç]os?|toalhas?|folhas?)"
+UNITS_RE = re.compile(rf"(\d{{1,4}})\s*{UNIT_WORDS}", re.I)
+# kits: '3 pacotes de 100 unidades', '2x 48 lenços'
+MULTI_RE = re.compile(
+    rf"(\d{{1,2}})\s*(?:pacotes?|pcts?|caixas?|refis?|x)\s*(?:de|com|c/)?\s*(\d{{1,4}})\s*{UNIT_WORDS}",
+    re.I,
+)
 
 
 PACK_RE = re.compile(r"(?:pacote|pct)\s+(?:com|de)\s+(\d{1,4})\b", re.I)
@@ -111,7 +117,11 @@ PACK_RE = re.compile(r"(?:pacote|pct)\s+(?:com|de)\s+(\d{1,4})\b", re.I)
 
 def parse_units(title):
     """Quantidade de unidades do pacote lida do título ('46 Unidades' -> 46)."""
-    m = UNITS_RE.search(title or "") or PACK_RE.search(title or "")
+    title = title or ""
+    kit = MULTI_RE.search(title)
+    if kit:
+        return int(kit.group(1)) * int(kit.group(2))
+    m = UNITS_RE.search(title) or PACK_RE.search(title)
     return int(m.group(1)) if m else None
 
 
