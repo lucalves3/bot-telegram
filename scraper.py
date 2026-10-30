@@ -118,6 +118,7 @@ MULTI_RE = re.compile(
 
 
 PACK_RE = re.compile(r"(?:pacote|pct)\s+(?:com|de)\s+(\d{1,4})\b", re.I)
+KIT_RE = re.compile(r"kit\s*(?:com|de|c/)?\s*(\d{1,2})\b(?!\s*em\s*\d)", re.I)
 
 
 def parse_units(title):
@@ -126,8 +127,32 @@ def parse_units(title):
     kit = MULTI_RE.search(title)
     if kit:
         return int(kit.group(1)) * int(kit.group(2))
-    m = UNITS_RE.search(title) or PACK_RE.search(title)
+    m = UNITS_RE.search(title) or PACK_RE.search(title) or KIT_RE.search(title)
     return int(m.group(1)) if m else None
+
+
+SIZE_RE = re.compile(r"(\d{1,4}(?:[.,]\d+)?)\s*(kg|gramas?|gr|g|ml|litros?|l)\b", re.I)
+# faixa de peso do bebê nas fraldas ('3 a 6 kg') não é conteúdo do produto
+WEIGHT_RANGE_RE = re.compile(r"\d+(?:[.,]\d+)?\s*(?:a|-|–|até)\s*\d+(?:[.,]\d+)?\s*kg", re.I)
+EACH_RE = re.compile(r"\b(?:cada|each)\b", re.I)
+
+
+def parse_size(title, units=None):
+    """Conteúdo total do produto: (quantidade, 'g' ou 'ml') ou None. '120g cada' em kit de 3 -> 360 g."""
+    t = title or ""
+    if re.search(r"fralda|len[cç]o", t, re.I) or WEIGHT_RANGE_RE.search(t):
+        return None
+    m = SIZE_RE.search(t)
+    if not m:
+        return None
+    amount = float(m.group(1).replace(",", "."))
+    unit = m.group(2).lower()
+    kind = "ml" if unit in ("ml", "l", "litro", "litros") else "g"
+    if unit in ("kg", "l", "litro", "litros"):
+        amount *= 1000
+    if units and units > 1 and EACH_RE.search(t):
+        amount *= units
+    return amount, kind
 
 
 def _title(soup):

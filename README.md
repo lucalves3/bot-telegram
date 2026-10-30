@@ -80,5 +80,8 @@ produtos novos ou que baixaram 5%+. O alvo é opcional:
 
 A quantidade (para o preço por unidade) é lida do título: unidades, fraldas, lenços, tiras, peças e kits
 como "2x 48 lenços". Sem quantidade no título, o produto só é filtrado pelo alvo total. Ignora geriátricas e adulto.
-Manda todos os achados, um por vez, com pausa aleatória de 5 a 10 segundos entre eles. Mercado Livre bloqueia leitura automática
+Os achados entram numa **fila** e o bot posta **1 produto por minuto** (`POST_INTERVAL_SEC`),
+alternando entre as categorias e, dentro de cada uma, do mais barato por unidade para o mais caro.
+`/fila` mostra o que está esperando. Cada mensagem traz preço, preço por unidade (kits) e preço por
+grama/ml (cremes, fórmulas...), calculados pelo título, e a hora em que o preço foi visto. Mercado Livre bloqueia leitura automática
 (verificação de conta / API 403), então não é suportado.

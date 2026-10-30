@@ -44,6 +44,15 @@ def init():
                 last_unit REAL NOT NULL,
                 PRIMARY KEY (watch_id, asin)
             );
+            CREATE TABLE IF NOT EXISTS queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                watch_id INTEGER NOT NULL,
+                asin TEXT NOT NULL,
+                prio REAL NOT NULL,
+                payload TEXT NOT NULL,
+                tries INTEGER NOT NULL DEFAULT 0,
+                UNIQUE (watch_id, asin)
+            );
             CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
                 value TEXT
@@ -149,6 +158,7 @@ def remove_watch(watch_id):
     with conn() as c:
         cur = c.execute("DELETE FROM watches WHERE id = ?", (watch_id,))
         c.execute("DELETE FROM seen WHERE watch_id = ?", (watch_id,))
+        c.execute("DELETE FROM queue WHERE watch_id = ?", (watch_id,))
         return cur.rowcount > 0
 
 
@@ -170,3 +180,46 @@ def set_seen(watch_id, asin, unit):
 def forget_seen(watch_id, asins):
     with conn() as c:
         c.executemany("DELETE FROM seen WHERE watch_id = ? AND asin = ?", [(watch_id, a) for a in asins])
+
+
+def enqueue(watch_id, asin, prio, payload):
+    with conn() as c:
+        c.execute(
+            "INSERT INTO queue (watch_id, asin, prio, payload) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(watch_id, asin) DO UPDATE SET prio = excluded.prio, payload = excluded.payload",
+            (watch_id, asin, prio, payload),
+        )
+
+
+def queue_counts():
+    """{watch_id: quantidade na fila}"""
+    with conn() as c:
+        rows = c.execute("SELECT watch_id, COUNT(*) AS n FROM queue GROUP BY watch_id").fetchall()
+        return {r["watch_id"]: r["n"] for r in rows}
+
+
+def queue_next():
+    """Próximo da fila: alterna entre as categorias e, dentro de cada uma, vai do mais barato."""
+    with conn() as c:
+        ids = [r["watch_id"] for r in c.execute("SELECT DISTINCT watch_id FROM queue ORDER BY watch_id")]
+        if not ids:
+            return None
+        last = int(get_setting("last_sent_watch", 0))
+        pick = next((i for i in ids if i > last), ids[0])
+        return c.execute(
+            "SELECT * FROM queue WHERE watch_id = ? ORDER BY prio, id LIMIT 1", (pick,)
+        ).fetchone()
+
+
+def queue_done(row):
+    with conn() as c:
+        c.execute("DELETE FROM queue WHERE id = ?", (row["id"],))
+    set_setting("last_sent_watch", row["watch_id"])
+
+
+def queue_fail(row, max_tries=3):
+    """Falha no envio: tenta de novo depois; desiste do item após max_tries."""
+    with conn() as c:
+        c.execute("UPDATE queue SET tries = tries + 1 WHERE id = ?", (row["id"],))
+        c.execute("DELETE FROM queue WHERE id = ? AND tries >= ?", (row["id"], max_tries))
+    set_setting("last_sent_watch", row["watch_id"])  # passa a vez, não trava a categoria

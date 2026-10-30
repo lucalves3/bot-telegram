@@ -5,24 +5,25 @@ Uso:
     python main.py check    # uma checagem e sai (para o Agendador de Tarefas)
 """
 import html
+import json
 import os
-import random
 import sys
 import time
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 
 import affiliate
 import db
+import messages
 import scraper
 import telegram
+from messages import brl
 
 load_dotenv()
 
-
-def brl(v):
-    return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+BRT = timezone(timedelta(hours=-3))  # horário de Brasília (sem horário de verão)
 
 
 def per_unit(price, units):
@@ -101,7 +102,7 @@ def check_watch(w):
             hits.append({**p, "unit": unit, "metric": metric})
     db.forget_seen(w["id"], rearm)
     hits.sort(key=lambda h: (h["unit"] is None, h["unit"] if h["unit"] is not None else h["price"]))
-    return hits  # send_hits marca cada produto como visto depois de enviar
+    return hits  # enqueue_hits marca como visto e coloca na fila de envio
 
 
 def describe_target(w):
@@ -113,25 +114,42 @@ def describe_target(w):
     return " e ".join(parts) or "qualquer preço"
 
 
-def send_hits(cid, w, hits):
-    if not hits:
-        return
+def enqueue_hits(w, hits):
+    """Coloca os achados na fila de envio e marca como vistos (não são reenfileirados)."""
     host = urlsplit(w["url"]).netloc
-    telegram.send(
-        cid,
-        f"🛒 <b>{html.escape(w['name'])}</b>: {len(hits)} produto(s), {describe_target(w)}",
-        preview=False,
-    )
-    for n, h in enumerate(hits):
-        if n:
-            time.sleep(random.uniform(5, 10))  # um por vez, sem rajada
-        product_url = affiliate.link(f"https://{host}/dp/{h['asin']}")
-        price_line = brl(h["price"])
-        if h["unit"] is not None:
-            price_line += f" · {h['units']} un · <b>{brl(h['unit'])}/un</b>"
-        caption = f"<b>{html.escape(h['title'][:90])}</b>\n{price_line}\n{product_url}"
-        notify(cid, caption, h.get("image"))
+    seen_at = datetime.now(BRT).strftime("%H:%M")
+    for h in hits:
+        payload = {
+            "title": h["title"],
+            "price": h["price"],
+            "units": h["units"],
+            "size": scraper.parse_size(h["title"], h["units"]),
+            "image": h.get("image"),
+            "host": host,
+            "asin": h["asin"],
+            "seen_at": seen_at,
+        }
+        # mais barato por unidade primeiro; sem quantidade, depois, por preço total
+        prio = h["unit"] if h["unit"] is not None else 1e6 + h["price"]
+        db.enqueue(w["id"], h["asin"], prio, json.dumps(payload))
         db.set_seen(w["id"], h["asin"], h["metric"])
+
+
+def send_next():
+    """Envia o próximo produto da fila (alterna entre as categorias)."""
+    cid = chat_id()
+    row = db.queue_next() if cid else None
+    if not row:
+        return
+    p = json.loads(row["payload"])
+    w = next((x for x in db.list_watches() if x["id"] == row["watch_id"]), None)
+    url = affiliate.link(f"https://{p['host']}/dp/{p['asin']}")
+    try:
+        notify(cid, messages.product_caption(p, w["name"] if w else "", url), p.get("image"))
+        db.queue_done(row)
+    except Exception as e:
+        print(f"[fila] {e}")
+        db.queue_fail(row)
 
 
 def check_all():
@@ -145,10 +163,8 @@ def check_all():
     for w in db.list_watches():
         try:
             hits = check_watch(w)
-            print(f"[ok] {w['name']}: {len(hits)} novos")
-            cid = chat_id()
-            if cid:
-                send_hits(cid, w, hits)
+            enqueue_hits(w, hits)
+            print(f"[ok] {w['name']}: {len(hits)} novos na fila")
         except Exception as e:
             print(f"[erro] {w['name']}: {e}")
 
@@ -162,6 +178,7 @@ HELP = (
     "/categoria &lt;link da busca Amazon&gt; [alvo] | Nome - avisa dos produtos da busca. "
     "Alvo: 1/un (preço por unidade) e/ou 50 (preço total); sem alvo, avisa de tudo\n"
     "/categorias - buscas monitoradas\n"
+    "/fila - produtos esperando para serem postados\n"
     "/remover_cat &lt;id&gt; - parar uma busca\n"
     "/checar - checar agora\n"
     "Nome do item: coloque depois do link com |, ex.: /add url 1500 | Meu item"
@@ -271,10 +288,12 @@ def handle(text, cid, uid=None):
             return telegram.send(cid, f"Não consegui ler a listagem: {html.escape(str(e))}")
         if not hits:
             return telegram.send(cid, "Nada que passe nos alvos agora. Aviso quando aparecer.")
-        dest = chat_id() or cid
-        if str(dest) != str(cid):
-            telegram.send(cid, f"Enviando {len(hits)} achado(s) no grupo, um a cada 5-10 s.")
-        send_hits(dest, w, hits)  # os achados vão pro grupo de avisos
+        enqueue_hits(w, hits)
+        telegram.send(
+            cid,
+            f"Achei {len(hits)} produto(s). Vou postar 1 por minuto no grupo, "
+            f"alternando entre as categorias. Veja a fila com /fila.",
+        )
     elif cmd == "/categorias":
         ws = db.list_watches()
         if not ws:
@@ -286,6 +305,14 @@ def handle(text, cid, uid=None):
     elif cmd == "/remover_cat":
         ok = len(parts) > 1 and parts[1].isdigit() and db.remove_watch(int(parts[1]))
         telegram.send(cid, "Removida." if ok else "Id não encontrado. Veja /categorias.")
+    elif cmd == "/fila":
+        counts = db.queue_counts()
+        if not counts:
+            return telegram.send(cid, "Fila vazia.")
+        names = {w["id"]: w["name"] for w in db.list_watches()}
+        lines = [f"{names.get(i, i)}: {n}" for i, n in sorted(counts.items())]
+        total = sum(counts.values())
+        telegram.send(cid, f"📮 Fila ({total}, 1 por minuto)\n" + "\n".join(lines))
     elif cmd == "/unidades":
         ok = (
             len(parts) > 2
@@ -303,15 +330,23 @@ def handle(text, cid, uid=None):
 
 def run():
     interval = int(os.getenv("CHECK_INTERVAL_MIN", "60")) * 60
-    next_check = 0
+    post_every = int(os.getenv("POST_INTERVAL_SEC", "60"))
+    next_check = next_send = 0
     offset = None
     print("Bot rodando. Ctrl+C para sair.")
     while True:
         if time.time() >= next_check:
             check_all()
             next_check = time.time() + interval
+        queued = bool(db.queue_counts())
+        if queued and time.time() >= next_send:
+            send_next()
+            next_send = time.time() + post_every
+        # a espera do getUpdates não passa do próximo envio/checagem
+        deadline = min(next_check, next_send) if queued else next_check
+        wait = int(max(1, min(25, deadline - time.time())))
         try:
-            for u in telegram.get_updates(offset):
+            for u in telegram.get_updates(offset, timeout=wait):
                 offset = u["update_id"] + 1
                 msg = u.get("message") or {}
                 text = msg.get("text", "")
@@ -327,5 +362,8 @@ if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "run"
     if mode == "check":
         check_all()
+        while chat_id() and db.queue_counts():  # sem loop de bot: esvazia a fila antes de sair
+            send_next()
+            time.sleep(int(os.getenv("POST_INTERVAL_SEC", "60")))
     else:
         run()
