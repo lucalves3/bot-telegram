@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 
+import affiliate
 import db
 import scraper
 import telegram
@@ -61,7 +62,7 @@ def check_item(item):
             lines.append(f"Antes: {brl(prev)}")
         if target is not None:
             lines.append(f"Seu alvo: {brl(target)}")
-        lines.append(item["url"])
+        lines.append(affiliate.link(item["url"]))
         cid = chat_id()
         if cid:
             notify(cid, "\n".join(lines), info["image"])
@@ -110,10 +111,11 @@ def send_hits(cid, w, hits):
         preview=False,
     )
     for h in shown:
+        product_url = affiliate.link(f"https://{host}/dp/{h['asin']}")
         caption = (
             f"<b>{html.escape(h['title'][:90])}</b>\n"
             f"{brl(h['price'])} · {h['units']} un · <b>{brl(h['unit'])}/un</b>\n"
-            f"https://{host}/dp/{h['asin']}"
+            f"{product_url}"
         )
         notify(cid, caption, h.get("image"))
         time.sleep(1)
