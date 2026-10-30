@@ -74,9 +74,17 @@ HELP = (
 )
 
 
-def handle(text, cid):
+def is_admin(uid):
+    admins = {a.strip() for a in os.getenv("ADMIN_IDS", "").split(",") if a.strip()}
+    return not admins or str(uid) in admins
+
+
+def handle(text, cid, uid=None):
     parts = text.strip().split()
     cmd = parts[0].split("@")[0].lower()
+
+    if not is_admin(uid):
+        return  # só os usuários em ADMIN_IDS podem dar comandos
 
     allowed = chat_id()
     if allowed and str(cid) != str(allowed):
@@ -143,7 +151,7 @@ def run():
                 msg = u.get("message") or {}
                 text = msg.get("text", "")
                 if text.startswith("/"):
-                    handle(text, msg["chat"]["id"])
+                    handle(text, msg["chat"]["id"], (msg.get("from") or {}).get("id"))
         except Exception as e:
             print(f"[erro bot] {e}")
             time.sleep(5)

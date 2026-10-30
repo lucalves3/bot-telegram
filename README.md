@@ -45,6 +45,8 @@ preço só por JavaScript ou bloqueiam bots vão precisar de Playwright (ainda n
    - `TELEGRAM_TOKEN` = token do BotFather
    - `DB_PATH` = `/data/pricehunter.db`
    - `CHECK_INTERVAL_MIN` = `60`
+   - `TELEGRAM_CHAT_ID` = ID do grupo (ex.: `-5387764795`)
+   - `ADMIN_IDS` = seu ID de usuário (pegue com @userinfobot); vários separados por vírgula
 4. Start command: `python main.py run` (já está no `Procfile`).
 5. Mande `/start` pro bot para ele guardar o chat.
 
