@@ -12,13 +12,13 @@ def _call(method, **payload):
     return r.json()["result"]
 
 
-def send(chat_id, text):
+def send(chat_id, text, preview=True):
     return _call(
         "sendMessage",
         chat_id=chat_id,
         text=text,
         parse_mode="HTML",
-        disable_web_page_preview=False,
+        disable_web_page_preview=not preview,
     )
 
 

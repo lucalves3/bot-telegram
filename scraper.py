@@ -1,5 +1,6 @@
 import json
 import re
+import time
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import requests
@@ -25,6 +26,10 @@ DEFAULT_SELECTORS = {"amazon": ".apex-core-price-identifier .a-offscreen"}
 def _store(url):
     host = urlsplit(url).netloc.lower().removeprefix("www.")
     return "amazon" if AMAZON_HOST.search(host) else None
+
+
+def is_amazon(url):
+    return _store(url) == "amazon"
 
 
 def normalize_url(url):
@@ -101,9 +106,12 @@ def _from_meta(soup):
 UNITS_RE = re.compile(r"(\d{1,4})\s*(?:unidades?|un\b|fraldas?|tiras?|pe[cç]as?)", re.I)
 
 
+PACK_RE = re.compile(r"(?:pacote|pct)\s+(?:com|de)\s+(\d{1,4})\b", re.I)
+
+
 def parse_units(title):
     """Quantidade de unidades do pacote lida do título ('46 Unidades' -> 46)."""
-    m = UNITS_RE.search(title or "")
+    m = UNITS_RE.search(title or "") or PACK_RE.search(title or "")
     return int(m.group(1)) if m else None
 
 
@@ -141,3 +149,35 @@ def fetch_info(url, selector=None):
     if price:
         return {"price": price, "title": title}
     raise RuntimeError("preço não encontrado automaticamente; informe um seletor CSS")
+
+
+# produtos que aparecem na busca de fralda mas não interessam
+EXCLUDE_WORDS = ("geriátric", "geriatric", "adulto", "incontin", "absorvente")
+
+
+def fetch_listing(url, pages=2):
+    """Lê cards de uma busca da Amazon: [{asin, title, price, units}]."""
+    out, seen = [], set()
+    parts = urlsplit(url)
+    base_query = [(k, v) for k, v in parse_qsl(parts.query) if k != "page"]
+    for page in range(1, pages + 1):
+        query = urlencode(base_query + [("page", str(page))])
+        page_url = urlunsplit((parts.scheme, parts.netloc, parts.path, query, ""))
+        r = requests.get(page_url, headers=HEADERS, timeout=20)
+        r.raise_for_status()
+        soup = BeautifulSoup(r.text, "html.parser")
+        cards = soup.select('div[data-component-type="s-search-result"]')
+        if not cards and page == 1:
+            raise RuntimeError("nenhum produto lido na listagem (bloqueio ou link inválido)")
+        for card in cards:
+            asin = card.get("data-asin")
+            h2 = card.select_one("h2")
+            price_el = card.select_one("span.a-price:not(.a-text-price) .a-offscreen")
+            price = parse_price(price_el.get_text()) if price_el else None
+            title = h2.get_text(" ", strip=True) if h2 else ""
+            if not asin or asin in seen or not price or not title:
+                continue
+            seen.add(asin)
+            out.append({"asin": asin, "title": title, "price": price, "units": parse_units(title)})
+        time.sleep(2)
+    return out

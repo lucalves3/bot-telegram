@@ -65,3 +65,10 @@ As respostas ficam no privado e só os avisos de preço vão pro grupo (`TELEGRA
 O bot limpa o link antes de salvar: remove parâmetros de rastreamento (`utm_*`, `gclid`, `fbclid`...)
 e, na Amazon, reduz para `https://www.amazon.com.br/dp/<ASIN>`. Para a Amazon o seletor do preço
 já é padrão, então basta `/add <link> [alvo] | Nome`.
+
+## Busca por categoria (Amazon)
+
+`/categoria <link de busca da Amazon> [máx R$/un] | Nome` lê as 2 primeiras páginas da busca,
+calcula o preço por unidade pelo título e avisa dos produtos abaixo do limite (padrão R$ 1,00).
+Só avisa de produtos novos ou que baixaram 5%+. Ignora geriátricas/adulto e títulos sem quantidade.
+Mercado Livre bloqueia leitura automática (verificação de conta / API 403), então não é suportado.

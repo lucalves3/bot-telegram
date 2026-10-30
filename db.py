@@ -31,6 +31,18 @@ def init():
                 price REAL NOT NULL,
                 ts TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS watches (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                url TEXT NOT NULL UNIQUE,
+                max_unit REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS seen (
+                watch_id INTEGER NOT NULL,
+                asin TEXT NOT NULL,
+                last_unit REAL NOT NULL,
+                PRIMARY KEY (watch_id, asin)
+            );
             CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
                 value TEXT
@@ -98,3 +110,41 @@ def set_setting(key, value):
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             (key, str(value)),
         )
+
+
+def add_watch(name, url, max_unit):
+    with conn() as c:
+        c.execute("INSERT INTO watches (name, url, max_unit) VALUES (?, ?, ?)", (name, url, max_unit))
+        return c.execute("SELECT * FROM watches WHERE url = ?", (url,)).fetchone()
+
+
+def list_watches():
+    with conn() as c:
+        return c.execute("SELECT * FROM watches ORDER BY id").fetchall()
+
+
+def remove_watch(watch_id):
+    with conn() as c:
+        cur = c.execute("DELETE FROM watches WHERE id = ?", (watch_id,))
+        c.execute("DELETE FROM seen WHERE watch_id = ?", (watch_id,))
+        return cur.rowcount > 0
+
+
+def get_seen(watch_id):
+    with conn() as c:
+        rows = c.execute("SELECT asin, last_unit FROM seen WHERE watch_id = ?", (watch_id,)).fetchall()
+        return {r["asin"]: r["last_unit"] for r in rows}
+
+
+def set_seen(watch_id, asin, unit):
+    with conn() as c:
+        c.execute(
+            "INSERT INTO seen (watch_id, asin, last_unit) VALUES (?, ?, ?) "
+            "ON CONFLICT(watch_id, asin) DO UPDATE SET last_unit = excluded.last_unit",
+            (watch_id, asin, unit),
+        )
+
+
+def forget_seen(watch_id, asins):
+    with conn() as c:
+        c.executemany("DELETE FROM seen WHERE watch_id = ? AND asin = ?", [(watch_id, a) for a in asins])
