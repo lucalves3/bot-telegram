@@ -110,7 +110,7 @@ def handle(text, cid, uid=None):
         args = main_part.split()
         if not args:
             return telegram.send(cid, "Uso: /add &lt;url&gt; [preço-alvo] [seletor]")
-        url = args[0]
+        url = scraper.normalize_url(args[0])
         target = scraper.parse_price(args[1]) if len(args) > 1 else None
         selector = " ".join(args[2:]) or None
         name = name.strip() or url[:50]
@@ -124,7 +124,10 @@ def handle(text, cid, uid=None):
             return telegram.send(cid, "Esse link já está sendo monitorado.")
         item = [i for i in db.list_items() if i["url"] == url][0]
         db.record_price(item["id"], price)
-        telegram.send(cid, f"✅ Monitorando <b>{html.escape(name)}</b>\nPreço atual: {brl(price)}")
+        telegram.send(
+            cid,
+            f"✅ Monitorando <b>{html.escape(name)}</b>\nPreço atual: {brl(price)}\n{url}",
+        )
     elif cmd == "/lista":
         items = db.list_items()
         if not items:

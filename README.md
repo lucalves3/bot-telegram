@@ -59,3 +59,9 @@ preço só por JavaScript ou bloqueiam bots vão precisar de Playwright (ainda n
 
 Com `ADMIN_IDS` definido, o admin pode mandar os comandos direto no privado do bot.
 As respostas ficam no privado e só os avisos de preço vão pro grupo (`TELEGRAM_CHAT_ID`).
+
+## Links
+
+O bot limpa o link antes de salvar: remove parâmetros de rastreamento (`utm_*`, `gclid`, `fbclid`...)
+e, na Amazon, reduz para `https://www.amazon.com.br/dp/<ASIN>`. Para a Amazon o seletor do preço
+já é padrão, então basta `/add <link> [alvo] | Nome`.

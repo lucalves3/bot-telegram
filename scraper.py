@@ -1,5 +1,6 @@
 import json
 import re
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import requests
 from bs4 import BeautifulSoup
@@ -11,6 +12,30 @@ HEADERS = {
     ),
     "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
 }
+
+
+AMAZON_HOST = re.compile(r"(^|\.)amazon\.[a-z.]+$")
+AMAZON_ASIN = re.compile(r"/(?:dp|gp/product|gp/aw/d)/([A-Z0-9]{10})(?:[/?]|$)")
+TRACKING_PARAMS = re.compile(r"^(utm_.*|gclid|fbclid|msclkid|ref|ref_|tag|ascsubtag)$", re.I)
+
+# seletor usado quando a loja não expõe o preço em JSON-LD/meta
+DEFAULT_SELECTORS = {"amazon": ".apex-core-price-identifier .a-offscreen"}
+
+
+def _store(url):
+    host = urlsplit(url).netloc.lower().removeprefix("www.")
+    return "amazon" if AMAZON_HOST.search(host) else None
+
+
+def normalize_url(url):
+    """Remove rastreamento do link; na Amazon reduz para /dp/<ASIN>."""
+    parts = urlsplit(url.strip())
+    if _store(url) == "amazon":
+        m = AMAZON_ASIN.search(parts.path + "/")
+        if m:
+            return f"{parts.scheme}://{parts.netloc}/dp/{m.group(1)}"
+    query = [(k, v) for k, v in parse_qsl(parts.query) if not TRACKING_PARAMS.match(k)]
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), ""))
 
 
 def parse_price(text):
@@ -79,6 +104,7 @@ def fetch_price(url, selector=None):
     r.raise_for_status()
     soup = BeautifulSoup(r.text, "html.parser")
 
+    selector = selector or DEFAULT_SELECTORS.get(_store(url))
     if selector:
         el = soup.select_one(selector)
         if el:
