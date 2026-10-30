@@ -6,6 +6,7 @@ Uso:
 """
 import html
 import os
+import random
 import sys
 import time
 from urllib.parse import urlsplit
@@ -74,9 +75,6 @@ def check_item(item):
     return price
 
 
-MAX_HITS = 15
-
-
 def check_watch(w):
     """Lê a listagem e devolve os produtos novos (ou 5%+ mais baratos) que passam nos alvos da busca.
 
@@ -103,10 +101,7 @@ def check_watch(w):
             hits.append({**p, "unit": unit, "metric": metric})
     db.forget_seen(w["id"], rearm)
     hits.sort(key=lambda h: (h["unit"] is None, h["unit"] if h["unit"] is not None else h["price"]))
-    # só marca como visto o que vai ser enviado; o resto sai nas próximas checagens
-    for h in hits[:MAX_HITS]:
-        db.set_seen(w["id"], h["asin"], h["metric"])
-    return hits
+    return hits  # send_hits marca cada produto como visto depois de enviar
 
 
 def describe_target(w):
@@ -122,22 +117,21 @@ def send_hits(cid, w, hits):
     if not hits:
         return
     host = urlsplit(w["url"]).netloc
-    shown = hits[:MAX_HITS]
     telegram.send(
         cid,
         f"🛒 <b>{html.escape(w['name'])}</b>: {len(hits)} produto(s), {describe_target(w)}",
         preview=False,
     )
-    for h in shown:
+    for n, h in enumerate(hits):
+        if n:
+            time.sleep(random.uniform(5, 10))  # um por vez, sem rajada
         product_url = affiliate.link(f"https://{host}/dp/{h['asin']}")
         price_line = brl(h["price"])
         if h["unit"] is not None:
             price_line += f" · {h['units']} un · <b>{brl(h['unit'])}/un</b>"
         caption = f"<b>{html.escape(h['title'][:90])}</b>\n{price_line}\n{product_url}"
         notify(cid, caption, h.get("image"))
-        time.sleep(1)
-    if len(hits) > len(shown):
-        telegram.send(cid, f"+ {len(hits) - len(shown)} na próxima checagem", preview=False)
+        db.set_seen(w["id"], h["asin"], h["metric"])
 
 
 def check_all():
@@ -278,9 +272,9 @@ def handle(text, cid, uid=None):
         if not hits:
             return telegram.send(cid, "Nada que passe nos alvos agora. Aviso quando aparecer.")
         dest = chat_id() or cid
-        send_hits(dest, w, hits)  # os achados vão pro grupo de avisos
         if str(dest) != str(cid):
-            telegram.send(cid, f"{len(hits)} achado(s) enviados no grupo.")
+            telegram.send(cid, f"Enviando {len(hits)} achado(s) no grupo, um a cada 5-10 s.")
+        send_hits(dest, w, hits)  # os achados vão pro grupo de avisos
     elif cmd == "/categorias":
         ws = db.list_watches()
         if not ws:

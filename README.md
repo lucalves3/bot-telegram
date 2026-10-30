@@ -80,5 +80,5 @@ produtos novos ou que baixaram 5%+. O alvo é opcional:
 
 A quantidade (para o preço por unidade) é lida do título: unidades, fraldas, lenços, tiras, peças e kits
 como "2x 48 lenços". Sem quantidade no título, o produto só é filtrado pelo alvo total. Ignora geriátricas e adulto.
-Manda no máximo 15 por checagem; o resto sai nas próximas. Mercado Livre bloqueia leitura automática
+Manda todos os achados, um por vez, com pausa aleatória de 5 a 10 segundos entre eles. Mercado Livre bloqueia leitura automática
 (verificação de conta / API 403), então não é suportado.
