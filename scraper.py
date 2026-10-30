@@ -18,6 +18,10 @@ HEADERS = {
 AMAZON_HOST = re.compile(r"(^|\.)amazon\.[a-z.]+$")
 AMAZON_ASIN = re.compile(r"/(?:dp|gp/product|gp/aw/d)/([A-Z0-9]{10})(?:[/?]|$)")
 TRACKING_PARAMS = re.compile(r"^(utm_.*|gclid|fbclid|msclkid|ref|ref_|tag|ascsubtag)$", re.I)
+# parâmetros de sessão/promo da Amazon; o 'ds' da página 1 é inválido na página 2 (503)
+AMAZON_SESSION_PARAMS = re.compile(
+    r"^(ds|qid|crid|sprefix|content-id|pd_rd_.*|pf_rd_.*|dib|dib_tag|page)$", re.I
+)
 
 # seletor usado quando a loja não expõe o preço em JSON-LD/meta
 DEFAULT_SELECTORS = {"amazon": ".apex-core-price-identifier .a-offscreen"}
@@ -39,7 +43,8 @@ def normalize_url(url):
         m = AMAZON_ASIN.search(parts.path + "/")
         if m:
             return f"{parts.scheme}://{parts.netloc}/dp/{m.group(1)}"
-    query = [(k, v) for k, v in parse_qsl(parts.query) if not TRACKING_PARAMS.match(k)]
+    drop = [TRACKING_PARAMS] + ([AMAZON_SESSION_PARAMS] if _store(url) == "amazon" else [])
+    query = [(k, v) for k, v in parse_qsl(parts.query) if not any(d.match(k) for d in drop)]
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), ""))
 
 
@@ -174,16 +179,37 @@ def fetch_info(url, selector=None):
 EXCLUDE_WORDS = ("geriátric", "geriatric", "adulto", "incontin", "absorvente")
 
 
+def _get_with_retry(url, attempts=3):
+    """GET que tenta de novo em 429/503 (limite temporário da Amazon)."""
+    for i in range(attempts):
+        r = requests.get(url, headers=HEADERS, timeout=20)
+        if r.status_code not in (429, 503) or i == attempts - 1:
+            r.raise_for_status()
+            return r
+        time.sleep(4 * (i + 1))
+
+
 def fetch_listing(url, pages=2):
     """Lê cards de uma busca da Amazon: [{asin, title, price, units}]."""
     out, seen = [], set()
     parts = urlsplit(url)
-    base_query = [(k, v) for k, v in parse_qsl(parts.query) if k != "page"]
+    base_query = [
+        (k, v)
+        for k, v in parse_qsl(parts.query)
+        if not AMAZON_SESSION_PARAMS.match(k) and k.lower() not in ("ref", "ref_")
+    ]
     for page in range(1, pages + 1):
-        query = urlencode(base_query + [("page", str(page))])
-        page_url = urlunsplit((parts.scheme, parts.netloc, parts.path, query, ""))
-        r = requests.get(page_url, headers=HEADERS, timeout=20)
-        r.raise_for_status()
+        extra = [("page", str(page)), ("ref", f"sr_pg_{page}")] if page > 1 else []
+        page_url = urlunsplit(
+            (parts.scheme, parts.netloc, parts.path, urlencode(base_query + extra), "")
+        )
+        try:
+            r = _get_with_retry(page_url)
+        except requests.RequestException as e:
+            if page == 1:
+                raise
+            print(f"[listagem] página {page} falhou ({e}); seguindo com o que já foi lido")
+            break
         soup = BeautifulSoup(r.text, "html.parser")
         cards = soup.select('div[data-component-type="s-search-result"]')
         if not cards and page == 1:
