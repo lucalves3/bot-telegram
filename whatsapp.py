@@ -79,6 +79,21 @@ def ensure_bridge():
     _bridge = subprocess.Popen(["node", "index.js"], cwd=BRIDGE_DIR)
 
 
+def status():
+    """{'connected': bool, 'qr': str|None} ou None se a ponte não responde."""
+    try:
+        r = requests.get(f"{_base()}/status", timeout=3)
+        return r.json() if r.ok else None
+    except (requests.RequestException, ValueError):
+        return None
+
+
+def qr_png():
+    r = requests.get(f"{_base()}/qr.png", timeout=10)
+    r.raise_for_status()
+    return r.content
+
+
 def groups():
     """[{id, subject}] dos grupos em que o número do bot está, em ordem alfabética."""
     r = requests.get(f"{_base()}/groups", timeout=20)

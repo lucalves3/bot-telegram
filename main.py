@@ -389,6 +389,57 @@ def commands(text, reply, ctx):
         reply("Pronto.")
 
 
+_qr = {"last": None, "msgs": {}}
+QR_CAPTION = (
+    "QR do WhatsApp do bot. No celular do número do bot: "
+    "Aparelhos conectados > Conectar um aparelho, e escaneie. "
+    "A imagem se atualiza sozinha quando o QR muda."
+)
+
+
+def qr_tick():
+    """Manda o QR do WhatsApp como imagem no privado dos ADMIN_IDS (e atualiza quando muda)."""
+    if not whatsapp.enabled():
+        return
+    st = whatsapp.status()
+    if not st:
+        return
+    admins = admin_ids()
+    if st.get("connected"):
+        if _qr["msgs"]:
+            for aid, mid in _qr["msgs"].items():
+                try:
+                    telegram.delete_message(aid, mid)
+                    telegram.send(aid, "✅ WhatsApp conectado.")
+                except Exception as e:
+                    print(f"[qr] {e}")
+            _qr["msgs"].clear()
+        _qr["last"] = None
+        return
+    qr = st.get("qr")
+    if not qr or qr == _qr["last"]:
+        return
+    if not admins:
+        print("[qr] defina ADMIN_IDS para receber o QR do WhatsApp no Telegram")
+        _qr["last"] = qr
+        return
+    try:
+        png = whatsapp.qr_png()
+    except Exception as e:
+        print(f"[qr] {e}")
+        return
+    _qr["last"] = qr
+    for aid in admins:
+        try:
+            if aid in _qr["msgs"]:
+                telegram.edit_photo_file(aid, _qr["msgs"][aid], png, QR_CAPTION)
+            else:
+                _qr["msgs"][aid] = telegram.send_photo_file(aid, png, QR_CAPTION)
+        except Exception as e:
+            print(f"[qr] envio para {aid}: {e}")
+            _qr["msgs"].pop(aid, None)
+
+
 def run():
     interval = int(os.getenv("CHECK_INTERVAL_MIN", "60")) * 60
     post_every = int(os.getenv("POST_INTERVAL_SEC", "60"))
@@ -397,6 +448,7 @@ def run():
     print("Bot rodando. Ctrl+C para sair.")
     while True:
         whatsapp.ensure_bridge()  # sobe/reinicia a ponte do WhatsApp quando ligada
+        qr_tick()
         if time.time() >= next_check:
             check_all()
             next_check = time.time() + interval

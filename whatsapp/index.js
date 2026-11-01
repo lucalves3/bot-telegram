@@ -8,16 +8,19 @@ import http from "node:http";
 import makeWASocket, { DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion } from "@whiskeysockets/baileys";
 import pino from "pino";
 import qrcode from "qrcode-terminal";
+import QRCode from "qrcode";
 
 const PORT = Number(process.env.WHATSAPP_BRIDGE_PORT || 3001);
 // no Railway use um Volume (ex.: WHATSAPP_AUTH_DIR=/data/wa-auth) para a sessão sobreviver aos deploys
 const AUTH_DIR =
   process.env.WHATSAPP_AUTH_DIR || new URL("./auth/", import.meta.url).pathname.replace(/^\/(\w:)/, "$1");
-// número do bot (com DDI, só dígitos): conecta por código de 8 letras em vez de QR
-const PAIR_NUMBER = (process.env.WHATSAPP_PAIR_NUMBER || "").replace(/\D/g, "");
+// WHATSAPP_LOGIN=code + WHATSAPP_PAIR_NUMBER: conecta por código de 8 letras; padrão: QR
+const PAIR_NUMBER =
+  process.env.WHATSAPP_LOGIN === "code" ? (process.env.WHATSAPP_PAIR_NUMBER || "").replace(/\D/g, "") : "";
 
 let sock = null;
 let connected = false;
+let lastQr = null; // QR atual (o bot manda como imagem no Telegram do admin)
 const inbox = [];
 
 function textOf(m) {
@@ -47,11 +50,13 @@ async function start() {
         }
       }
     } else if (qr) {
-      console.log("Escaneie o QR no WhatsApp > Aparelhos conectados:");
+      lastQr = qr;
+      console.log("Novo QR do WhatsApp (enviado como imagem no Telegram do admin):");
       qrcode.generate(qr, { small: true });
     }
     if (connection === "open") {
       connected = true;
+      lastQr = null;
       console.log("WhatsApp conectado.");
     }
     if (connection === "close") {
@@ -106,7 +111,13 @@ function readBody(req) {
 http
   .createServer(async (req, res) => {
     try {
-      if (req.method === "GET" && req.url === "/status") return json(res, 200, { connected });
+      if (req.method === "GET" && req.url === "/status") return json(res, 200, { connected, qr: connected ? null : lastQr });
+      if (req.method === "GET" && req.url === "/qr.png") {
+        if (connected || !lastQr) return json(res, 404, { error: "sem QR" });
+        const png = await QRCode.toBuffer(lastQr, { width: 600, margin: 2 });
+        res.writeHead(200, { "Content-Type": "image/png" });
+        return res.end(png);
+      }
       if (!connected) return json(res, 503, { error: "WhatsApp desconectado" });
       if (req.method === "GET" && req.url === "/updates") return json(res, 200, inbox.splice(0));
       if (req.method === "GET" && req.url === "/groups") {
