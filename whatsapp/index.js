@@ -4,6 +4,7 @@
 //   GET  /groups   -> [{ id, subject }]   (para achar o WHATSAPP_GROUP_ID)
 //   GET  /updates  -> mensagens de texto recebidas desde a última chamada
 //   POST /send     -> { jid, text, image? }
+import fs from "node:fs";
 import http from "node:http";
 import makeWASocket, { DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion } from "@whiskeysockets/baileys";
 import pino from "pino";
@@ -63,7 +64,10 @@ async function start() {
       connected = false;
       const code = lastDisconnect?.error?.output?.statusCode;
       if (code === DisconnectReason.loggedOut) {
-        console.log("Sessão encerrada. Apague a pasta whatsapp/auth e escaneie de novo.");
+        // sessão inválida ou desconectada no celular: apaga e gera um QR novo
+        console.log("Sessão encerrada; apagando a sessão salva e gerando um QR novo...");
+        fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+        setTimeout(start, 3000);
       } else {
         console.log(`Conexão caiu (${code}), reconectando...`);
         setTimeout(start, 3000);
