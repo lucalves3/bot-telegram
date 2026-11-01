@@ -1,0 +1,8 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+# sobe a ponte do WhatsApp e o bot juntos (substitui o comando de início do painel)
+startCommand = "sh start.sh"
+restartPolicyType = "ALWAYS"
