@@ -33,7 +33,11 @@ def product_caption(p, category, url):
     lines = [random.choice(INTROS)]
     if category:
         lines.append(f"📂 {html.escape(category)}")
-    lines += ["", f"<b>{html.escape(p['title'][:90])}</b>", "", f"💰 {brl(p['price'])}"]
+    lines += ["", f"<b>{html.escape(p['title'][:90])}</b>", ""]
+    if p.get("list_price"):
+        lines.append(f"🏷️ De <s>{brl(p['list_price'])}</s> por <b>{brl(p['price'])}</b> ({p['discount']}% off)")
+    else:
+        lines.append(f"💰 {brl(p['price'])}")
     units = p.get("units")
     if units and units > 1:
         lines.append(f"📦 {brl(p['price'] / units)} por unidade ({units} un)")

@@ -1,6 +1,7 @@
 import json
 import re
 import time
+import unicodedata
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import requests
@@ -214,6 +215,25 @@ def _get_with_retry(url, attempts=3):
         time.sleep(4 * (i + 1))
 
 
+def search_url(term):
+    return "https://www.amazon.com.br/s?" + urlencode({"k": term})
+
+
+def _norm(s):
+    s = unicodedata.normalize("NFKD", s or "")
+    return "".join(ch for ch in s if not unicodedata.combining(ch)).lower()
+
+
+def relevant(title, term):
+    """O título fala do termo? Exige a maior parte das palavras significativas (>= 5 letras, pelo radical)."""
+    words = [w[:5] for w in re.findall(r"\w+", _norm(term)) if len(w) >= 5]
+    if not words:
+        return True
+    t = _norm(title)
+    hits = sum(w in t for w in words)
+    return hits >= len(words) - len(words) // 3
+
+
 def fetch_listing(url, pages=2):
     """Lê cards de uma busca da Amazon: [{asin, title, price, units}]."""
     out, seen = [], set()
@@ -249,11 +269,18 @@ def fetch_listing(url, pages=2):
                 continue
             seen.add(asin)
             img = card.select_one("img.s-image")
+            # preço "De" riscado: só existe quando a Amazon mostra desconto
+            strike = card.select_one('span.a-price[data-a-strike="true"] .a-offscreen')
+            list_price = parse_price(strike.get_text()) if strike else None
+            if list_price and list_price <= price:
+                list_price = None
             out.append(
                 {
                     "asin": asin,
                     "title": title,
                     "price": price,
+                    "list_price": list_price,
+                    "discount": round((1 - price / list_price) * 100) if list_price else 0,
                     "units": parse_units(title),
                     "image": img.get("src") if img else None,
                 }

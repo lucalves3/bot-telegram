@@ -19,6 +19,8 @@ import db
 import messages
 import scraper
 import telegram
+import themes
+import whatsapp
 from messages import brl
 
 load_dotenv()
@@ -35,13 +37,53 @@ def chat_id():
 
 
 def notify(cid, text, image=None):
-    """Envia com a foto do produto; se a foto falhar, manda só o texto."""
+    """Envia no Telegram com a foto do produto; se a foto falhar, manda só o texto."""
     if image:
         try:
             return telegram.send_photo(cid, image, text)
         except Exception as e:
             print(f"[foto] {e}")
     return telegram.send(cid, text, preview=not image)
+
+
+def notify_wa(text, image=None):
+    jid = whatsapp.group_id()
+    if image:
+        try:
+            return whatsapp.send(jid, text, image)
+        except Exception as e:
+            print(f"[whatsapp foto] {e}")
+    return whatsapp.send(jid, text)
+
+
+def has_channel():
+    return bool(chat_id()) or bool(whatsapp.group_id())
+
+
+def broadcast(make_text, image=None):
+    """Posta em todos os canais; make_text(canal) monta o texto com o link de afiliado do canal.
+
+    Levanta erro só se nenhum canal configurado conseguiu enviar.
+    """
+    sent, errors = 0, []
+    cid = chat_id()
+    if cid:
+        try:
+            notify(cid, make_text("telegram"), image)
+            sent += 1
+        except Exception as e:
+            errors.append(f"telegram: {e}")
+    if whatsapp.group_id():
+        try:
+            notify_wa(make_text("whatsapp"), image)
+            sent += 1
+        except Exception as e:
+            errors.append(f"whatsapp: {e}")
+    for err in errors:
+        print(f"[envio] {err}")
+    if not sent and errors:
+        raise RuntimeError("; ".join(errors))
+    return sent
 
 
 def check_item(item):
@@ -64,12 +106,10 @@ def check_item(item):
             lines.append(f"Antes: {brl(prev)}")
         if target is not None:
             lines.append(f"Seu alvo: {brl(target)}")
-        lines.append(affiliate.link(item["url"]))
-        cid = chat_id()
-        if cid:
-            notify(cid, "\n".join(lines), info["image"])
+        if has_channel():
+            broadcast(lambda ch: "\n".join(lines + [affiliate.link(item["url"], ch)]), info["image"])
         else:
-            print("Sem chat_id: mande /start pro bot.")
+            print("Sem canal: mande /start pro bot ou configure WHATSAPP_GROUP_ID.")
         db.set_alert_price(item["id"], price)
     elif target is not None and price > target:
         db.set_alert_price(item["id"], None)  # saiu da faixa, rearma o aviso
@@ -137,15 +177,15 @@ def enqueue_hits(w, hits):
 
 def send_next():
     """Envia o próximo produto da fila (alterna entre as categorias)."""
-    cid = chat_id()
-    row = db.queue_next() if cid else None
+    row = db.queue_next() if has_channel() else None
     if not row:
         return
     p = json.loads(row["payload"])
     w = next((x for x in db.list_watches() if x["id"] == row["watch_id"]), None)
-    url = affiliate.link(f"https://{p['host']}/dp/{p['asin']}")
+    url = f"https://{p['host']}/dp/{p['asin']}"
+    cat = w["name"] if w else ""
     try:
-        notify(cid, messages.product_caption(p, w["name"] if w else "", url), p.get("image"))
+        broadcast(lambda ch: messages.product_caption(p, cat, affiliate.link(url, ch)), p.get("image"))
         db.queue_done(row)
     except Exception as e:
         print(f"[fila] {e}")
@@ -182,6 +222,7 @@ HELP = (
     "/remover_cat &lt;id&gt; - parar uma busca\n"
     "/checar - checar agora\n"
     "Nome do item: coloque depois do link com |, ex.: /add url 1500 | Meu item"
+    + themes.HELP
 )
 
 
@@ -205,46 +246,68 @@ def handle(text, cid, uid=None):
     # no privado (chat id == id do usuário) o admin pode configurar; as respostas
     # ficam lá e só os avisos de preço vão pro grupo
     in_dm = bool(admin_ids()) and str(cid) == str(uid)
-    if allowed and str(cid) != str(allowed) and not in_dm:
+    # grupos de tema: aceitos se já ligados, ou para o /tema de um admin (exige ADMIN_IDS)
+    theme_chat = db.theme_of_chat("telegram", cid) is not None or (cmd == "/tema" and bool(admin_ids()))
+    if allowed and str(cid) != str(allowed) and not in_dm and not theme_chat:
         return  # só o chat configurado (ou o privado do admin) pode dar comandos
-    if not allowed:
+    if not allowed and not theme_chat:
         if cmd != "/start":
             return  # nenhum chat configurado ainda: só /start é aceito
         db.set_setting("chat_id", cid)
         telegram.send(cid, "Chat de avisos definido.")
 
+    commands(text, lambda msg: telegram.send(cid, msg), ("telegram", str(cid)))
+
+
+def handle_wa(u):
+    """Comandos do WhatsApp: só de WHATSAPP_ADMINS (ou do próprio número), no grupo geral ou de tema."""
+    jid = u["jid"]
+    if not whatsapp.is_admin(u):
+        return
+    known = jid == whatsapp.group_id() or db.theme_of_chat("whatsapp", jid) is not None
+    if not known and not u["text"].lower().startswith("/tema"):
+        return
+    commands(u["text"], lambda msg: whatsapp.send(jid, msg), ("whatsapp", jid))
+
+
+def commands(text, reply, ctx):
+    parts = text.strip().split()
+    cmd = parts[0].split("@")[0].lower()
+
+    if themes.command(cmd, text, reply, ctx):
+        return
     if cmd in ("/start", "/help"):
-        telegram.send(cid, HELP)
+        reply(HELP)
     elif cmd == "/add":
         body = text.split(None, 1)[1] if len(parts) > 1 else ""
         main_part, _, name = body.partition("|")
         args = main_part.split()
         if not args:
-            return telegram.send(cid, "Uso: /add &lt;url&gt; [preço-alvo] [seletor]")
+            return reply("Uso: /add &lt;url&gt; [preço-alvo] [seletor]")
         url = scraper.normalize_url(args[0])
         target = scraper.parse_price(args[1]) if len(args) > 1 else None
         selector = " ".join(args[2:]) or None
         try:
             info = scraper.fetch_info(url, selector)
         except Exception as e:
-            return telegram.send(cid, f"Não consegui ler o preço: {html.escape(str(e))}")
+            return reply(f"Não consegui ler o preço: {html.escape(str(e))}")
         price, title = info["price"], info["title"]
         name = name.strip() or title[:80] or url[:50]
         units = scraper.parse_units(title)
         try:
             db.add_item(name, url, target, selector, units)
         except Exception:
-            return telegram.send(cid, "Esse link já está sendo monitorado.")
+            return reply("Esse link já está sendo monitorado.")
         item = [i for i in db.list_items() if i["url"] == url][0]
         db.record_price(item["id"], price)
         msg = f"✅ Monitorando <b>{html.escape(name)}</b> (id {item['id']})\nPreço atual: {brl(price)}"
         if units:
             msg += f"\n{units} unidades: {per_unit(price, units)}"
-        telegram.send(cid, f"{msg}\n{url}")
+        reply(f"{msg}\n{url}")
     elif cmd == "/lista":
         items = db.list_items()
         if not items:
-            return telegram.send(cid, "Nenhum item. Use /add.")
+            return reply("Nenhum item. Use /add.")
         out = []
         for i in items:
             now = brl(i["last_price"]) if i["last_price"] else "-"
@@ -252,19 +315,19 @@ def handle(text, cid, uid=None):
             now += f" ({pu})" if pu else ""
             alvo = f" (alvo {brl(i['target'])})" if i["target"] else ""
             out.append(f"{i['id']}. <b>{html.escape(i['name'])}</b>: {now}{alvo}")
-        telegram.send(cid, "\n".join(out))
+        reply("\n".join(out))
     elif cmd == "/remover":
         ok = len(parts) > 1 and parts[1].isdigit() and db.remove_item(int(parts[1]))
-        telegram.send(cid, "Removido." if ok else "Id não encontrado. Veja /lista.")
+        reply("Removido." if ok else "Id não encontrado. Veja /lista.")
     elif cmd == "/categoria":
         body = text.split(None, 1)[1] if len(parts) > 1 else ""
         main_part, _, name = body.partition("|")
         args = main_part.split()
         if not args:
-            return telegram.send(cid, "Uso: /categoria &lt;link da busca&gt; [alvo] | Nome")
+            return reply("Uso: /categoria &lt;link da busca&gt; [alvo] | Nome")
         url = scraper.normalize_url(args[0])
         if not scraper.is_amazon(url):
-            return telegram.send(cid, "Por enquanto só links de busca da Amazon.")
+            return reply("Por enquanto só links de busca da Amazon.")
         max_unit = max_total = None
         for tok in args[1:]:
             tok = tok.lower()
@@ -276,43 +339,40 @@ def handle(text, cid, uid=None):
         try:
             w = db.add_watch(name, url, max_unit, max_total)
         except Exception:
-            return telegram.send(cid, "Essa busca já está sendo monitorada.")
-        telegram.send(
-            cid,
+            return reply("Essa busca já está sendo monitorada.")
+        reply(
             f"✅ Monitorando <b>{html.escape(name)}</b> (id {w['id']}): {describe_target(w)}. Lendo...",
         )
         try:
             hits = check_watch(w)
         except Exception as e:
             db.remove_watch(w["id"])
-            return telegram.send(cid, f"Não consegui ler a listagem: {html.escape(str(e))}")
+            return reply(f"Não consegui ler a listagem: {html.escape(str(e))}")
         if not hits:
-            return telegram.send(cid, "Nada que passe nos alvos agora. Aviso quando aparecer.")
+            return reply("Nada que passe nos alvos agora. Aviso quando aparecer.")
         enqueue_hits(w, hits)
-        telegram.send(
-            cid,
+        reply(
             f"Achei {len(hits)} produto(s). Vou postar 1 por minuto no grupo, "
             f"alternando entre as categorias. Veja a fila com /fila.",
         )
     elif cmd == "/categorias":
         ws = db.list_watches()
         if not ws:
-            return telegram.send(cid, "Nenhuma busca. Use /categoria.")
-        telegram.send(
-            cid,
+            return reply("Nenhuma busca. Use /categoria.")
+        reply(
             "\n".join(f"{w['id']}. <b>{html.escape(w['name'])}</b>: {describe_target(w)}" for w in ws),
         )
     elif cmd == "/remover_cat":
         ok = len(parts) > 1 and parts[1].isdigit() and db.remove_watch(int(parts[1]))
-        telegram.send(cid, "Removida." if ok else "Id não encontrado. Veja /categorias.")
+        reply("Removida." if ok else "Id não encontrado. Veja /categorias.")
     elif cmd == "/fila":
         counts = db.queue_counts()
         if not counts:
-            return telegram.send(cid, "Fila vazia.")
+            return reply("Fila vazia.")
         names = {w["id"]: w["name"] for w in db.list_watches()}
         lines = [f"{names.get(i, i)}: {n}" for i, n in sorted(counts.items())]
         total = sum(counts.values())
-        telegram.send(cid, f"📮 Fila ({total}, 1 por minuto)\n" + "\n".join(lines))
+        reply(f"📮 Fila ({total}, 1 por minuto)\n" + "\n".join(lines))
     elif cmd == "/unidades":
         ok = (
             len(parts) > 2
@@ -321,11 +381,11 @@ def handle(text, cid, uid=None):
             and int(parts[2]) > 0
             and db.set_units(int(parts[1]), int(parts[2]))
         )
-        telegram.send(cid, "Unidades atualizadas." if ok else "Uso: /unidades &lt;id&gt; &lt;quantidade&gt;")
+        reply("Unidades atualizadas." if ok else "Uso: /unidades &lt;id&gt; &lt;quantidade&gt;")
     elif cmd == "/checar":
-        telegram.send(cid, "Checando...")
+        reply("Checando...")
         check_all()
-        telegram.send(cid, "Pronto.")
+        reply("Pronto.")
 
 
 def run():
@@ -342,9 +402,20 @@ def run():
         if queued and time.time() >= next_send:
             send_next()
             next_send = time.time() + post_every
+        themes.search_tick()  # no máximo 1 busca por vez, com pausa entre elas
+        themes.post_tick()
         # a espera do getUpdates não passa do próximo envio/checagem
         deadline = min(next_check, next_send) if queued else next_check
-        wait = int(max(1, min(25, deadline - time.time())))
+        # com WhatsApp ligado, espera curta para responder rápido no grupo
+        cap = 3 if whatsapp.enabled() else (20 if themes.has_work() else 25)
+        wait = int(max(1, min(cap, deadline - time.time())))
+        if whatsapp.enabled():
+            try:
+                for u in whatsapp.get_updates():
+                    if u["text"].startswith("/"):
+                        handle_wa(u)
+            except Exception as e:
+                print(f"[erro whatsapp] {e}")
         try:
             for u in telegram.get_updates(offset, timeout=wait):
                 offset = u["update_id"] + 1
@@ -362,7 +433,12 @@ if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "run"
     if mode == "check":
         check_all()
-        while chat_id() and db.queue_counts():  # sem loop de bot: esvazia a fila antes de sair
+        # temas: busca os termos vencidos (com pausa) e posta 1 oferta por tema na janela
+        while db.due_term(themes.term_interval()):
+            themes.search_tick(force=True)
+            time.sleep(themes.term_gap())
+        themes.post_tick()
+        while has_channel() and db.queue_counts():  # sem loop de bot: esvazia a fila antes de sair
             send_next()
             time.sleep(int(os.getenv("POST_INTERVAL_SEC", "60")))
     else:
