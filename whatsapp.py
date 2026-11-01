@@ -2,6 +2,8 @@
 import html
 import os
 import re
+import subprocess
+from pathlib import Path
 
 import requests
 
@@ -38,9 +40,43 @@ def send(jid, text, image=None):
 
 
 def get_updates():
-    r = requests.get(f"{_base()}/updates", timeout=10)
+    try:
+        r = requests.get(f"{_base()}/updates", timeout=10)
+    except requests.ConnectionError:
+        return []  # ponte ainda subindo
+    if r.status_code == 503:
+        return []  # ponte no ar, mas WhatsApp ainda não conectado (aguardando pareamento)
     r.raise_for_status()
     return r.json()
+
+
+BRIDGE_DIR = Path(__file__).parent / "whatsapp"
+_bridge = None
+
+
+def bridge_up():
+    try:
+        return requests.get(f"{_base()}/status", timeout=3).ok
+    except requests.RequestException:
+        return False
+
+
+def ensure_bridge():
+    """Sobe a ponte Node (e a reinicia se cair). Se já houver uma rodando (ex.: npm start manual), usa ela."""
+    global _bridge
+    if not enabled() or os.getenv("WHATSAPP_SPAWN_BRIDGE", "1") == "0":
+        return
+    if _bridge is not None and _bridge.poll() is None:
+        return  # a nossa está viva
+    if _bridge is None and bridge_up():
+        return  # outra ponte já atende
+    if _bridge is not None:
+        print(f"[whatsapp] ponte parou (código {_bridge.returncode}); reiniciando")
+    if not (BRIDGE_DIR / "node_modules").exists():
+        print("[whatsapp] whatsapp/node_modules não existe: rode npm install na pasta whatsapp")
+        return
+    print("[whatsapp] iniciando a ponte")
+    _bridge = subprocess.Popen(["node", "index.js"], cwd=BRIDGE_DIR)
 
 
 def groups():

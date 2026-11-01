@@ -396,6 +396,7 @@ def run():
     offset = None
     print("Bot rodando. Ctrl+C para sair.")
     while True:
+        whatsapp.ensure_bridge()  # sobe/reinicia a ponte do WhatsApp quando ligada
         if time.time() >= next_check:
             check_all()
             next_check = time.time() + interval
