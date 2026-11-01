@@ -105,8 +105,19 @@ def is_dm(jid):
     return not jid.endswith("@g.us")
 
 
+def _variants(number):
+    """Celular brasileiro com e sem o 9 depois do DDD (o WhatsApp às vezes usa o formato antigo)."""
+    out = {number}
+    if number.startswith("55") and len(number) == 13 and number[4] == "9":
+        out.add(number[:4] + number[5:])
+    elif number.startswith("55") and len(number) == 12:
+        out.add(number[:4] + "9" + number[4:])
+    return out
+
+
 def admins():
-    return {re.sub(r"\D", "", a) for a in os.getenv("WHATSAPP_ADMINS", "").split(",") if a.strip()}
+    nums = {re.sub(r"\D", "", a) for a in os.getenv("WHATSAPP_ADMINS", "").split(",") if a.strip()}
+    return set().union(*(_variants(n) for n in nums)) if nums else set()
 
 
 def is_admin(update):
