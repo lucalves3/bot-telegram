@@ -166,6 +166,7 @@ HELP = (
     "/config &lt;Nome&gt; desconto=15 intervalo=25 horario=8-22 max=150 tag=seunome-20\n"
     "/temas - lista os temas\n"
     "/sair - desliga este grupo do tema\n"
+    "WhatsApp no privado com o bot: /grupos lista os grupos, /ligar &lt;Nome&gt; &lt;nº&gt; e /desligar &lt;nº&gt;\n"
     "/remover_tema &lt;Nome&gt;\n"
     "Nome do tema é uma palavra só (ex.: Amamentação)."
 )
@@ -204,7 +205,40 @@ def command(cmd, text, reply, ctx):
         themes = db.list_themes()
         reply("\n\n".join(_describe(t) for t in themes) if themes else "Nenhum tema. Use /tema &lt;Nome&gt; no grupo.")
         return True
+    channel, chat = ctx
+    private = channel == "whatsapp" and whatsapp.is_dm(chat)
+
+    if cmd == "/grupos":
+        if channel != "whatsapp":
+            reply("No Telegram, mande /tema &lt;Nome&gt; dentro do grupo.")
+            return True
+        lines = []
+        for i, g in enumerate(whatsapp.groups(), 1):
+            tid = db.theme_of_chat("whatsapp", g["id"])
+            t = db.theme_by_id(tid) if tid else None
+            lines.append(f"{i}. {html.escape(g.get('subject') or g['id'])}" + (f" → {html.escape(t['name'])}" if t else ""))
+        reply("\n".join(lines) + "\n\nUse /ligar &lt;Tema&gt; &lt;nº&gt; ou /desligar &lt;nº&gt;." if lines else "O bot não está em nenhum grupo.")
+        return True
+    if cmd in ("/ligar", "/desligar"):
+        num = (args if cmd == "/ligar" else name).strip()
+        gs = whatsapp.groups() if channel == "whatsapp" else []
+        if not num.isdigit() or not 1 <= int(num) <= len(gs) or (cmd == "/ligar" and not name):
+            reply("Uso: /ligar &lt;Tema&gt; &lt;nº&gt; ou /desligar &lt;nº&gt; (veja os números em /grupos)")
+            return True
+        g = gs[int(num) - 1]
+        label = html.escape(g.get("subject") or g["id"])
+        if cmd == "/desligar":
+            ok = db.unlink_group("whatsapp", g["id"])
+            reply(f"{label} desligado do tema." if ok else f"{label} não estava em nenhum tema.")
+            return True
+        t = db.add_theme(name)
+        db.link_group(t["id"], "whatsapp", g["id"])
+        reply(f"✅ {label} agora recebe o tema <b>{html.escape(t['name'])}</b>.")
+        return True
     if cmd == "/sair":
+        if private:
+            reply("No privado use /desligar &lt;nº&gt; (veja /grupos).")
+            return True
         ok = db.unlink_group(*ctx)
         reply("Grupo desligado do tema." if ok else "Este grupo não está em nenhum tema.")
         return True
@@ -216,6 +250,9 @@ def command(cmd, text, reply, ctx):
 
     if cmd == "/tema":
         t = db.add_theme(name)
+        if private:
+            reply(f"Tema <b>{html.escape(t['name'])}</b> pronto. Agora ligue os grupos: /grupos e /ligar {html.escape(t['name'])} &lt;nº&gt;.")
+            return True
         db.link_group(t["id"], *ctx)
         reply(f"✅ Este grupo agora recebe o tema <b>{html.escape(t['name'])}</b>.\n\n{_describe(t)}")
         return True

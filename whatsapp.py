@@ -43,12 +43,24 @@ def get_updates():
     return r.json()
 
 
+def groups():
+    """[{id, subject}] dos grupos em que o número do bot está, em ordem alfabética."""
+    r = requests.get(f"{_base()}/groups", timeout=20)
+    r.raise_for_status()
+    return sorted(r.json(), key=lambda g: (g.get("subject") or "").lower())
+
+
+def is_dm(jid):
+    return not jid.endswith("@g.us")
+
+
 def admins():
     return {re.sub(r"\D", "", a) for a in os.getenv("WHATSAPP_ADMINS", "").split(",") if a.strip()}
 
 
 def is_admin(update):
     if update.get("from_me"):
-        return True  # o próprio número conectado
+        # o próprio número do bot só vale em grupo; no privado seriam conversas pessoais dele
+        return not is_dm(update.get("jid", ""))
     number = re.sub(r"\D", "", update.get("sender", "").split("@")[0].split(":")[0])
     return number in admins()

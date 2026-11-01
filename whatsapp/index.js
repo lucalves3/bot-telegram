@@ -10,7 +10,11 @@ import pino from "pino";
 import qrcode from "qrcode-terminal";
 
 const PORT = Number(process.env.WHATSAPP_BRIDGE_PORT || 3001);
-const AUTH_DIR = new URL("./auth/", import.meta.url).pathname.replace(/^\/(\w:)/, "$1");
+// no Railway use um Volume (ex.: WHATSAPP_AUTH_DIR=/data/wa-auth) para a sessão sobreviver aos deploys
+const AUTH_DIR =
+  process.env.WHATSAPP_AUTH_DIR || new URL("./auth/", import.meta.url).pathname.replace(/^\/(\w:)/, "$1");
+// número do bot (com DDI, só dígitos): conecta por código de 8 letras em vez de QR
+const PAIR_NUMBER = (process.env.WHATSAPP_PAIR_NUMBER || "").replace(/\D/g, "");
 
 let sock = null;
 let connected = false;
@@ -25,9 +29,24 @@ async function start() {
   const { version } = await fetchLatestBaileysVersion();
   sock = makeWASocket({ version, auth: state, logger: pino({ level: "warn" }), markOnlineOnConnect: false });
   sock.ev.on("creds.update", saveCreds);
+  let pairingRequested = false;
 
-  sock.ev.on("connection.update", ({ connection, lastDisconnect, qr }) => {
-    if (qr) {
+  sock.ev.on("connection.update", async ({ connection, lastDisconnect, qr }) => {
+    if (qr && PAIR_NUMBER && !state.creds.registered) {
+      if (!pairingRequested) {
+        pairingRequested = true;
+        try {
+          const code = await sock.requestPairingCode(PAIR_NUMBER);
+          console.log("==============================================");
+          console.log(`CÓDIGO DE PAREAMENTO DO WHATSAPP: ${code}`);
+          console.log("No celular do bot: Aparelhos conectados > Conectar um aparelho >");
+          console.log("Conectar com número de telefone, e digite o código acima.");
+          console.log("==============================================");
+        } catch (e) {
+          console.error("Falha ao pedir o código de pareamento:", e?.message || e);
+        }
+      }
+    } else if (qr) {
       console.log("Escaneie o QR no WhatsApp > Aparelhos conectados:");
       qrcode.generate(qr, { small: true });
     }
@@ -56,7 +75,7 @@ async function start() {
       inbox.push({
         jid: k.remoteJid,
         // número de quem mandou (em grupo é o participant; *Pn/*Alt quando o WhatsApp usa LID)
-        sender: k.participantPn || k.participantAlt || k.participant || k.senderPn || k.remoteJid,
+        sender: k.participantPn || k.participantAlt || k.participant || k.senderPn || k.remoteJidAlt || k.remoteJid,
         from_me: Boolean(k.fromMe),
         text,
       });

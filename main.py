@@ -265,7 +265,8 @@ def handle_wa(u):
     if not whatsapp.is_admin(u):
         return
     known = jid == whatsapp.group_id() or db.theme_of_chat("whatsapp", jid) is not None
-    if not known and not u["text"].lower().startswith("/tema"):
+    # no privado com o bot o admin pode dar qualquer comando
+    if not known and not whatsapp.is_dm(jid) and not u["text"].lower().startswith("/tema"):
         return
     commands(u["text"], lambda msg: whatsapp.send(jid, msg), ("whatsapp", jid))
 
