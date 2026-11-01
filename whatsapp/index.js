@@ -81,13 +81,11 @@ async function start() {
       const text = textOf(msg.message);
       if (!text) continue;
       const k = msg.key;
-      inbox.push({
-        jid: k.remoteJid,
-        // número de quem mandou (em grupo é o participant; *Pn/*Alt quando o WhatsApp usa LID)
-        sender: k.participantPn || k.participantAlt || k.participant || k.senderPn || k.remoteJidAlt || k.remoteJid,
-        from_me: Boolean(k.fromMe),
-        text,
-      });
+      // número de quem mandou (em grupo é o participant; *Pn/*Alt quando o WhatsApp usa LID)
+      const sender =
+        k.participantPn || k.participantAlt || k.participant || k.senderPn || k.remoteJidAlt || k.remoteJid;
+      if (text.startsWith("/")) console.log(`[msg] comando de ${sender} em ${k.remoteJid}: ${text.slice(0, 40)}`);
+      inbox.push({ jid: k.remoteJid, sender, from_me: Boolean(k.fromMe), text });
       if (inbox.length > 500) inbox.shift();
     }
   });

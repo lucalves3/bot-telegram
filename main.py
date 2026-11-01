@@ -263,6 +263,10 @@ def handle_wa(u):
     """Comandos do WhatsApp: só de WHATSAPP_ADMINS (ou do próprio número), no grupo geral ou de tema."""
     jid = u["jid"]
     if not whatsapp.is_admin(u):
+        print(
+            f"[whatsapp] comando ignorado de {u.get('sender')}: não está em WHATSAPP_ADMINS "
+            f"(adicione os dígitos antes do @, ex.: {u.get('sender', '').split('@')[0]})"
+        )
         return
     known = jid == whatsapp.group_id() or db.theme_of_chat("whatsapp", jid) is not None
     # no privado com o bot o admin pode dar qualquer comando
