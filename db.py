@@ -397,12 +397,25 @@ def tq_add(theme_id, asin, prio, payload):
         )
 
 
+AGE_PENALTY = 10  # pontos de desconto perdidos por hora na fila
+
+
 def tq_next(theme_id, max_age_sec):
-    """Melhor oferta da fila do tema; descarta as antigas (o preço já pode ter mudado)."""
+    """Melhor oferta da fila do tema; descarta as antigas (o preço já pode ter mudado).
+
+    prio é -desconto; cada hora de espera custa AGE_PENALTY pontos de desconto, para uma oferta
+    fresca não ficar presa atrás de descontos maiores e sair com o preço velho."""
+    now = time.time()
     with conn() as c:
-        c.execute("DELETE FROM theme_queue WHERE ts < ?", (time.time() - max_age_sec,))
+        # descartadas sem postar: esquece que foram vistas, para voltarem na próxima busca
+        c.execute(
+            "DELETE FROM theme_seen WHERE (theme_id, asin) IN (SELECT theme_id, asin FROM theme_queue WHERE ts < ?)",
+            (now - max_age_sec,),
+        )
+        c.execute("DELETE FROM theme_queue WHERE ts < ?", (now - max_age_sec,))
         return c.execute(
-            "SELECT * FROM theme_queue WHERE theme_id = ? ORDER BY prio, id LIMIT 1", (theme_id,)
+            "SELECT * FROM theme_queue WHERE theme_id = ? ORDER BY prio + (? - ts) / 3600.0 * ?, id LIMIT 1",
+            (theme_id, now, AGE_PENALTY),
         ).fetchone()
 
 

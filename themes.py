@@ -20,7 +20,7 @@ import whatsapp
 from messages import brl
 
 BRT = timezone(timedelta(hours=-3))
-QUEUE_MAX_AGE = 6 * 3600  # oferta na fila há mais de 6h é descartada (preço pode ter mudado)
+QUEUE_MAX_AGE = 3 * 3600  # oferta na fila há mais de 3h é descartada (preço pode ter mudado)
 
 
 def term_interval():
