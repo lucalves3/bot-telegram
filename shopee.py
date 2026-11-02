@@ -1,0 +1,74 @@
+"""Shopee: busca de ofertas pela Open API oficial de afiliados (affiliate.shopee.com.br > Open API).
+
+Precisa de SHOPEE_APP_ID e SHOPEE_SECRET. Os links devolvidos (offerLink) já são de afiliado.
+"""
+import hashlib
+import json
+import os
+import time
+
+import requests
+
+API = "https://open-api.affiliate.shopee.com.br/graphql"
+
+# sortType: 1 relevância, 2 mais vendidos, 3 maior preço, 4 menor preço, 5 maior comissão
+QUERY = """
+query($keyword: String, $sortType: Int, $page: Int, $limit: Int) {
+  productOfferV2(keyword: $keyword, sortType: $sortType, page: $page, limit: $limit) {
+    nodes { itemId productName priceMin priceMax priceDiscountRate sales imageUrl offerLink shopName }
+  }
+}
+"""
+
+
+def enabled():
+    return bool(os.getenv("SHOPEE_APP_ID") and os.getenv("SHOPEE_SECRET"))
+
+
+def _call(query, variables):
+    app_id, secret = os.getenv("SHOPEE_APP_ID", ""), os.getenv("SHOPEE_SECRET", "")
+    body = json.dumps({"query": query, "variables": variables}, separators=(",", ":"))
+    ts = str(int(time.time()))
+    sig = hashlib.sha256(f"{app_id}{ts}{body}{secret}".encode()).hexdigest()
+    r = requests.post(
+        API,
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"SHA256 Credential={app_id}, Timestamp={ts}, Signature={sig}",
+        },
+        timeout=30,
+    )
+    r.raise_for_status()
+    data = r.json()
+    if data.get("errors"):
+        raise RuntimeError(f"Shopee API: {data['errors'][0].get('message')}")
+    return data["data"]
+
+
+def search(keyword, limit=50, sort=2):
+    """Ofertas da Shopee para o termo, as mais vendidas primeiro. Mesmo formato do scraper da Amazon."""
+    if not enabled():
+        raise RuntimeError("Shopee não configurada (SHOPEE_APP_ID e SHOPEE_SECRET)")
+    nodes = _call(QUERY, {"keyword": keyword, "sortType": sort, "page": 1, "limit": limit})["productOfferV2"]["nodes"]
+    out = []
+    for n in nodes or []:
+        try:
+            price = float(n["priceMin"])
+        except (TypeError, ValueError):
+            continue
+        discount = int(n.get("priceDiscountRate") or 0)
+        list_price = round(price / (1 - discount / 100), 2) if 0 < discount < 100 else None
+        out.append(
+            {
+                "id": f"shopee:{n['itemId']}",
+                "title": n["productName"],
+                "price": price,
+                "list_price": list_price,
+                "discount": discount,
+                "sales": int(n.get("sales") or 0),
+                "image": n.get("imageUrl"),
+                "url": n["offerLink"],
+            }
+        )
+    return out

@@ -14,6 +14,7 @@ import affiliate
 import db
 import messages
 import scraper
+import shopee
 import telegram
 import whatsapp
 from messages import brl
@@ -51,9 +52,16 @@ def check_term(term_row):
     term = term_row["term"]
     seen = db.theme_seen(theme["id"])
     added = 0
-    is_link = term.lower().startswith("http")
-    url = scraper.normalize_url(term) if is_link else scraper.search_url(term)
-    for p in scraper.fetch_listing(url, pages=1):
+    if term.lower().startswith("shopee:"):
+        # termo da Shopee: busca pela API oficial, link já vem de afiliado
+        term = term[7:].strip()
+        is_link = False
+        results = [dict(p, asin=p["id"], units=scraper.parse_units(p["title"])) for p in shopee.search(term)]
+    else:
+        is_link = term.lower().startswith("http")
+        url = scraper.normalize_url(term) if is_link else scraper.search_url(term)
+        results = scraper.fetch_listing(url, pages=1)
+    for p in results:
         if p["discount"] < theme["min_discount"]:
             continue  # só promoção de verdade (preço "De" riscado)
         if theme["max_total"] is not None and p["price"] > theme["max_total"]:
@@ -72,6 +80,7 @@ def check_term(term_row):
             "size": scraper.parse_size(p["title"], p["units"]),
             "image": p.get("image"),
             "asin": p["asin"],
+            "url": p.get("url"),  # Shopee: link de afiliado pronto
             "seen_at": datetime.now(BRT).strftime("%H:%M"),
         }
         db.tq_add(theme["id"], p["asin"], -p["discount"], json.dumps(payload))
@@ -139,7 +148,7 @@ def post_tick():
         url = f"https://www.amazon.com.br/dp/{p['asin']}"
         sent = 0
         for g in groups:
-            link = affiliate.link(url, g["channel"], theme["tag"])
+            link = p.get("url") or affiliate.link(url, g["channel"], theme["tag"])
             try:
                 _send(g["channel"], g["chat_id"], messages.product_caption(p, theme["name"], link, theme["invite"]), p.get("image"))
                 sent += 1
@@ -161,6 +170,7 @@ HELP = (
     "\n\n<b>Temas (grupos de nicho)</b>\n"
     "/tema &lt;Nome&gt; - mande dentro do grupo para ligá-lo ao tema (cria se não existir)\n"
     "/termos &lt;Nome&gt; termo 1, termo 2 - termos buscados na Amazon (ou links de busca colados)\n"
+    "/termos &lt;Nome&gt; shopee:fralda, shopee:mamadeira - busca na Shopee (API oficial)\n"
     "/remover_termo &lt;Nome&gt; termo\n"
     "/excluir &lt;Nome&gt; palavra 1, palavra 2 - ignora produtos com essas palavras\n"
     "/config &lt;Nome&gt; desconto=15 intervalo=25 horario=8-22 max=150 tag=seunome-20\n"
