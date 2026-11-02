@@ -44,7 +44,7 @@ def product_caption(p, category, url, invite=None):
         amount, kind = p["size"]
         total = " no total" if units and units > 1 else ""
         lines.append(f"⚖️ {per_size(p['price'], amount, kind)} ({fmt_amount(amount, kind)}{total})")
-    lines += ["", f"👉 {url}", "", f"🕐 Preço visto às {p['seen_at']}, pode mudar. Vale conferir!"]
+    lines += ["", f"👉 {url}", "", "⏳ Corre que o preço pode mudar a qualquer momento!"]
     if invite:
         lines += ["", f"📲 Quer mais ofertas assim? Entre no grupo: {invite}"]
     return "\n".join(lines)
