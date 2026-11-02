@@ -5,6 +5,7 @@ O Railway é bloqueado pela Amazon (IP de datacenter); o PC busca e manda as ofe
   POST /api/offers  -> {theme_id, offers: [...]}  ->  {added}
 Toda chamada precisa do cabeçalho Authorization: Bearer <INGEST_TOKEN>.
 """
+import hashlib
 import hmac
 import json
 import os
@@ -18,7 +19,15 @@ THEME_KEYS = ("id", "name", "min_discount", "max_total", "excludes")
 
 
 def _token():
-    return os.getenv("INGEST_TOKEN", "")
+    return token()
+
+
+def token():
+    """INGEST_TOKEN, ou um derivado do TELEGRAM_TOKEN (já existe no PC e no servidor, nada a copiar)."""
+    if os.getenv("INGEST_TOKEN"):
+        return os.getenv("INGEST_TOKEN")
+    tg = os.getenv("TELEGRAM_TOKEN", "")
+    return hashlib.sha256(f"price-hunter-ingest:{tg}".encode()).hexdigest() if tg else ""
 
 
 class Handler(BaseHTTPRequestHandler):

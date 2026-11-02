@@ -12,15 +12,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-import themes  # noqa: E402  (depois do .env)
+import api  # noqa: E402  (depois do .env)
+import themes  # noqa: E402
 
 BASE = os.getenv("REMOTE_URL", "").rstrip("/")
-HEADERS = {"Authorization": f"Bearer {os.getenv('INGEST_TOKEN', '')}"}
+HEADERS = {"Authorization": f"Bearer {api.token()}"}
 
 
 def main():
-    if not BASE or not os.getenv("INGEST_TOKEN"):
-        raise SystemExit("Configure REMOTE_URL e INGEST_TOKEN no .env")
+    if not BASE or not api.token():
+        raise SystemExit("Configure REMOTE_URL (e TELEGRAM_TOKEN ou INGEST_TOKEN) no .env")
     last = {}  # (theme_id, termo) -> hora da última busca
     print(f"Coletor rodando, enviando para {BASE}. Ctrl+C para sair.")
     while True:
