@@ -126,6 +126,12 @@ def init():
             # quando o produto foi visto; os já vistos contam a partir de agora
             c.execute("ALTER TABLE theme_seen ADD COLUMN seen_ts REAL NOT NULL DEFAULT 0")
             c.execute("UPDATE theme_seen SET seen_ts = ?", (time.time(),))
+        if "last_posted" not in {r["name"] for r in c.execute("PRAGMA table_info(theme_terms)")}:
+            # quando saiu o último post vindo deste termo (rodízio: 1 de cada termo por vez)
+            c.execute("ALTER TABLE theme_terms ADD COLUMN last_posted REAL NOT NULL DEFAULT 0")
+            # fila antiga não sabe de qual termo veio: esvazia e esquece, para voltar com a nova nota
+            c.execute("DELETE FROM theme_seen WHERE (theme_id, asin) IN (SELECT theme_id, asin FROM theme_queue)")
+            c.execute("DELETE FROM theme_queue")
         theme_cols = {r["name"] for r in c.execute("PRAGMA table_info(themes)")}
         if "invite" not in theme_cols:
             c.execute("ALTER TABLE themes ADD COLUMN invite TEXT")
@@ -441,10 +447,23 @@ def tq_next(theme_id, max_age_sec):
             (now - max_age_sec,),
         )
         c.execute("DELETE FROM theme_queue WHERE ts < ?", (now - max_age_sec,))
+        # rodízio: primeiro as escolhidas no painel, depois o termo que está há mais tempo sem post;
+        # dentro do termo, a melhor oferta
         return c.execute(
-            "SELECT * FROM theme_queue WHERE theme_id = ? ORDER BY prio + (? - ts) / 3600.0 * ?, id LIMIT 1",
+            """SELECT q.* FROM theme_queue q
+               LEFT JOIN theme_terms t ON t.theme_id = q.theme_id AND t.term = json_extract(q.payload, '$.term')
+               WHERE q.theme_id = ?
+               ORDER BY CASE WHEN json_extract(q.payload, '$.manual') = 1 THEN 0 ELSE 1 END,
+                        COALESCE(t.last_posted, 9e18),
+                        q.prio + (? - q.ts) / 3600.0 * ?, q.id
+               LIMIT 1""",
             (theme_id, now, AGE_PENALTY),
         ).fetchone()
+
+
+def term_posted(theme_id, term):
+    with conn() as c:
+        c.execute("UPDATE theme_terms SET last_posted = ? WHERE theme_id = ? AND term = ?", (time.time(), theme_id, term))
 
 
 def tq_done(row):

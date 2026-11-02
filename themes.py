@@ -26,6 +26,7 @@ QUEUE_MAX_AGE = 2 * 3600  # oferta na fila há mais de 2h é descartada (preço 
 URGENT_MAX_AGE = 20 * 60  # fura-fila só vale para oferta achada há no máximo 20 min
 URGENT_GAP = 5 * 60  # respiro mínimo entre dois posts quando uma oferta fura a fila
 JITTER = 0.3  # variação do intervalo de postagem (±30%)
+ML_MAX_PRICE = float(os.getenv("ML_MAX_PRICE", "300"))  # preço máximo das ofertas do Mercado Livre
 
 
 def next_gap(interval_min):
@@ -58,7 +59,23 @@ def remote_amazon():
     return os.getenv("AMAZON_REMOTE", "") == "1"
 
 
-def enqueue(theme_id, offers):
+SUSPECT_DISCOUNT = int(os.getenv("SUSPECT_DISCOUNT", "55"))  # acima disso o preço "De" costuma ser inflado
+ESSENTIALS = re.compile(
+    r"fralda|len[çc]o|pomada|assadura|mamadeira|chupeta|\bbody|bodies|shampoo|sabonete|"
+    r"condicionador|hidratante|leite|f[óo]rmula|bico|absorvente de seio|algod[ãa]o|cotonete",
+    re.I,
+)
+
+
+def score(p):
+    """Pontos da oferta (maior = melhor). Desconto conta até SUSPECT_DISCOUNT; acima disso perde
+    pontos (desconto de mentira). Itens de compra recorrente (fralda, lenço...) ganham bônus."""
+    d = p["discount"]
+    pts = d if d <= SUSPECT_DISCOUNT else SUSPECT_DISCOUNT - (d - SUSPECT_DISCOUNT) * 2
+    return pts + (15 if ESSENTIALS.search(p["title"]) else 0)
+
+
+def enqueue(theme_id, offers, term=None):
     """Põe na fila as ofertas ainda não postadas (ou 5% mais baratas). Devolve quantas entraram."""
     seen = db.theme_seen(theme_id)
     added = 0
@@ -66,7 +83,9 @@ def enqueue(theme_id, offers):
         last = seen.get(p["asin"])
         if last is not None and p["price"] >= last * 0.95:
             continue  # já postado e não ficou 5% mais barato
-        db.tq_add(theme_id, p["asin"], -p["discount"], json.dumps(p))
+        if term:
+            p = dict(p, term=term)
+        db.tq_add(theme_id, p["asin"], -score(p), json.dumps(p))
         db.set_theme_seen(theme_id, p["asin"], p["price"])
         added += 1
     return added
@@ -78,13 +97,14 @@ def check_term(term_row):
     db.touch_term(term_row["id"])
     if not theme:
         return 0
-    return enqueue(theme["id"], find_offers(theme, term_row["term"]))
+    return enqueue(theme["id"], find_offers(theme, term_row["term"]), term_row["term"])
 
 
 def find_offers(theme, term):
     """Busca o termo (Amazon ou shopee:) e devolve as ofertas que passam nos filtros do tema."""
     offers = []
-    if term.lower().startswith("ml:"):
+    store = "ml" if term.lower().startswith("ml:") else "other"
+    if store == "ml":
         # termo do Mercado Livre: API oficial, link com a etiqueta de afiliado
         term = term[3:].strip()
         is_link = term.lower().startswith("top")  # mais vendidos: não filtra pelo texto do termo
@@ -103,6 +123,8 @@ def find_offers(theme, term):
             continue  # só promoção de verdade (preço "De" riscado)
         if theme["max_total"] is not None and p["price"] > theme["max_total"]:
             continue
+        if store == "ml" and p["price"] > ML_MAX_PRICE:
+            continue  # ML: fora itens caros (banheira, carrinho...), que quase ninguém compra pelo grupo
         if _excluded(p["title"], theme) or (not is_link and not scraper.relevant(p["title"], term)):
             continue
         offers.append({
@@ -198,6 +220,8 @@ def post_tick():
                 print(f"[tema envio] {theme['name']} -> {g['channel']} {g['chat_id']}: {e}")
         if sent:
             db.tq_done(row)
+            if p.get("term"):
+                db.term_posted(theme["id"], p["term"])
         else:
             db.tq_fail(row)
         # intervalo com variação de ±30% (ex.: 10 min vira algo entre 7 e 13), para não parecer robô

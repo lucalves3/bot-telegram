@@ -117,6 +117,17 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(401, {"error": "chave inválida"})
         if self.path == "/api/manual":
             return self._manual()
+        if self.path == "/api/terms/remove":
+            try:
+                b = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                tid = int(b["theme_id"])
+                removed = [x for x in b.get("terms", []) if isinstance(x, str) and db.remove_term(tid, x)]
+            except (ValueError, KeyError, TypeError):
+                return self._json(400, {"error": "corpo inválido"})
+            with db.conn() as c:  # tira da fila o que veio desses termos
+                for x in removed:
+                    c.execute("DELETE FROM theme_queue WHERE theme_id = ? AND json_extract(payload, '$.term') = ?", (tid, x))
+            return self._json(200, {"removed": removed, "terms": db.list_terms(tid)})
         if self.path == "/api/terms":
             # adiciona termos a um tema (mesmo efeito do /termos no WhatsApp)
             try:
