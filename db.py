@@ -409,7 +409,7 @@ def tq_urgent(theme_id, min_discount, max_age_sec):
     with conn() as c:
         return c.execute(
             """SELECT * FROM theme_queue WHERE theme_id = ? AND ts >= ?
-               AND (json_extract(payload, '$.flash') = 1 OR (? > 0 AND -prio >= ?))
+               AND (json_extract(payload, '$.flash') = 1 OR (? > 0 AND json_extract(payload, '$.discount') >= ?))
                ORDER BY prio, id LIMIT 1""",
             (theme_id, time.time() - max_age_sec, min_discount, min_discount),
         ).fetchone()

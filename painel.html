@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Adicionar oferta</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --text:#1d2330; --muted:#6b7280; --line:#e2e5ea; --accent:#e8590c; --ok:#2b8a3e; --err:#c92a2a; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#14161a; --card:#1d2026; --text:#e9ecef; --muted:#9aa1ab; --line:#2c3038; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 system-ui, sans-serif; }
+  main { max-width:560px; margin:0 auto; padding:20px 16px 40px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  p.sub { color:var(--muted); margin:0 0 18px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px; }
+  label { display:block; font-size:13px; color:var(--muted); margin:10px 0 4px; }
+  input, select, textarea { width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--text); font:inherit; }
+  textarea { min-height:60px; resize:vertical; }
+  .row { display:flex; gap:10px; } .row > div { flex:1; }
+  .check { display:flex; align-items:center; gap:8px; margin-top:12px; } .check input { width:auto; }
+  button { margin-top:16px; width:100%; padding:11px; border:0; border-radius:8px; background:var(--accent); color:#fff; font:600 15px system-ui; cursor:pointer; }
+  button:disabled { opacity:.6; }
+  #img { max-width:120px; max-height:120px; display:none; margin-top:8px; border-radius:8px; background:#fff; }
+  #msg { margin-top:12px; font-weight:600; } .ok { color:var(--ok); } .err { color:var(--err); }
+  a.bm { display:inline-block; padding:8px 12px; border-radius:8px; background:var(--accent); color:#fff; text-decoration:none; font-weight:600; }
+  ol { padding-left:20px; margin:8px 0 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Adicionar oferta</h1>
+  <p class="sub">Ofertas escolhidas por você entram na frente da fila, com o seu link de afiliado.</p>
+
+  <div class="card" id="setup">
+    <b>Botão da Amazon</b>
+    <ol>
+      <li>Arraste este botão para a barra de favoritos: <a class="bm" id="bm" href="#">➕ Oferta pro bot</a></li>
+      <li>Abra um produto na Amazon e clique no favorito. Esta página abre preenchida.</li>
+    </ol>
+    <label for="key">Chave do bot (só na primeira vez; fica salva neste navegador)</label>
+    <input id="key" type="password" autocomplete="off" placeholder="cole a chave aqui">
+  </div>
+
+  <div class="card">
+    <label for="theme">Tema</label>
+    <select id="theme"><option value="">carregando…</option></select>
+    <label for="url">Link do produto na Amazon</label>
+    <input id="url" placeholder="https://www.amazon.com.br/dp/...">
+    <label for="title">Título</label>
+    <textarea id="title"></textarea>
+    <div class="row">
+      <div><label for="price">Preço (R$)</label><input id="price" inputmode="decimal" placeholder="46,54"></div>
+      <div><label for="list">Preço "De" (R$)</label><input id="list" inputmode="decimal" placeholder="64,79"></div>
+    </div>
+    <label for="image">Foto (link)</label>
+    <input id="image">
+    <img id="img" alt="">
+    <div class="check"><input type="checkbox" id="flash"><label for="flash" style="margin:0">Oferta relâmpago (sai na hora)</label></div>
+    <button id="send">Adicionar à fila</button>
+    <div id="msg"></div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const store = { get(k){ try { return localStorage.getItem(k) || ""; } catch { return ""; } }, set(k,v){ try { localStorage.setItem(k,v); } catch {} } };
+$("key").value = store.get("bot-key");
+if ($("key").value) $("setup").querySelector("label").textContent = "Chave do bot (salva)";
+
+// favorito: lê a página do produto que o usuário está vendo e abre este painel preenchido (dados no #, não vão ao servidor pela URL)
+const bm = `javascript:(()=>{const q=s=>document.querySelector(s);const t=x=>x?x.textContent.trim():"";const d={url:location.href.split("?")[0],title:t(q("#productTitle")),price:t(q(".priceToPay .a-offscreen")||q("#corePrice_feature_div .a-offscreen")||q("#corePriceDisplay_desktop_feature_div .a-price .a-offscreen")),list:t(q(".basisPrice .a-offscreen")||q("#corePriceDisplay_desktop_feature_div .a-text-price .a-offscreen")),image:(q("#landingImage")||{}).src||"",flash:/rel[aâ]mpago|tempo limitado/i.test(t(q("#dealBadge_feature_div"))+t(q("#corePriceDisplay_desktop_feature_div"))+t(q("#apex_desktop")))};window.open("${location.origin}/painel#"+encodeURIComponent(JSON.stringify(d)))})()`;
+$("bm").href = bm;
+$("bm").addEventListener("click", (e) => e.preventDefault()); // aqui só serve para arrastar
+
+function fill() {
+  if (!location.hash) return;
+  try {
+    const d = JSON.parse(decodeURIComponent(location.hash.slice(1)));
+    $("url").value = d.url || ""; $("title").value = d.title || "";
+    $("price").value = (d.price || "").replace(/R\$\s*/, ""); $("list").value = (d.list || "").replace(/R\$\s*/, "");
+    $("image").value = d.image || ""; $("flash").checked = !!d.flash; showImg();
+  } catch {}
+}
+function showImg() { const u = $("image").value; $("img").src = u; $("img").style.display = u ? "block" : "none"; }
+$("image").addEventListener("input", showImg);
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: { "Content-Type": "application/json", Authorization: "Bearer " + $("key").value.trim() } });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.error || ("erro " + r.status));
+  return body;
+}
+async function loadThemes() {
+  if (!$("key").value.trim()) { $("theme").innerHTML = '<option value="">cole a chave do bot acima</option>'; return; }
+  try {
+    const themes = await api("/api/themes");
+    $("theme").innerHTML = themes.map((t) => `<option value="${t.id}">${t.name.replace(/</g, "&lt;")}</option>`).join("");
+    const last = store.get("bot-theme"); if (last) $("theme").value = last;
+  } catch (e) { $("theme").innerHTML = `<option value="">${e.message}</option>`; }
+}
+$("key").addEventListener("change", () => { store.set("bot-key", $("key").value.trim()); loadThemes(); });
+
+$("send").addEventListener("click", async () => {
+  const msg = $("msg"); msg.className = ""; msg.textContent = "";
+  $("send").disabled = true;
+  try {
+    const r = await api("/api/manual", { method: "POST", body: JSON.stringify({
+      theme_id: Number($("theme").value), url: $("url").value.trim(), title: $("title").value.trim(),
+      price: $("price").value, list_price: $("list").value, image: $("image").value.trim(), flash: $("flash").checked }) });
+    store.set("bot-theme", $("theme").value);
+    msg.className = "ok"; msg.textContent = `✅ Na fila! ${r.discount ? r.discount + "% off. " : ""}${r.flash ? "Sai na hora." : "Sai no próximo horário do tema."}`;
+    history.replaceState(null, "", location.pathname);
+  } catch (e) { msg.className = "err"; msg.textContent = "❌ " + e.message; }
+  $("send").disabled = false;
+});
+fill(); loadThemes();
+</script>
+</body>
+</html>

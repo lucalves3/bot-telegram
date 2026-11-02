@@ -4,3 +4,4 @@ __pycache__/
 .venv/
 whatsapp/auth/
 whatsapp/node_modules/
+chave-painel.txt
