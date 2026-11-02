@@ -129,6 +129,8 @@ def init():
         theme_cols = {r["name"] for r in c.execute("PRAGMA table_info(themes)")}
         if "invite" not in theme_cols:
             c.execute("ALTER TABLE themes ADD COLUMN invite TEXT")
+        if "last_post_at" not in theme_cols:
+            c.execute("ALTER TABLE themes ADD COLUMN last_post_at REAL NOT NULL DEFAULT 0")
         if "flash_discount" not in theme_cols:
             # desconto a partir do qual a oferta fura a fila (0 = só relâmpago)
             c.execute("ALTER TABLE themes ADD COLUMN flash_discount INTEGER NOT NULL DEFAULT 40")
@@ -278,7 +280,7 @@ def queue_fail(row, max_tries=3):
 
 
 # ---------- temas ----------
-THEME_FIELDS = {"max_total", "min_discount", "interval_min", "hour_start", "hour_end", "tag", "excludes", "next_post_at", "invite", "flash_discount"}
+THEME_FIELDS = {"max_total", "min_discount", "interval_min", "hour_start", "hour_end", "tag", "excludes", "next_post_at", "invite", "flash_discount", "last_post_at"}
 
 
 def get_theme(name):

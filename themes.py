@@ -26,7 +26,11 @@ QUEUE_MAX_AGE = 2 * 3600  # oferta na fila há mais de 2h é descartada (preço 
 URGENT_MAX_AGE = 20 * 60  # fura-fila só vale para oferta achada há no máximo 20 min
 URGENT_GAP = 5 * 60  # respiro mínimo entre dois posts quando uma oferta fura a fila
 JITTER = 0.3  # variação do intervalo de postagem (±30%)
-_last_post = {}  # tema -> hora do último post
+
+
+def next_gap(interval_min):
+    """Segundos até o próximo post: o intervalo com ±30% de variação (10 min -> 7 a 13)."""
+    return interval_min * 60 * random.uniform(1 - JITTER, 1 + JITTER)
 
 
 def term_interval():
@@ -176,7 +180,7 @@ def post_tick():
             row = db.tq_next(theme["id"], QUEUE_MAX_AGE)
         else:
             # fura-fila: relâmpago ou desconto alto, recém-achada, com respiro desde o último post
-            last_post = _last_post.get(theme["id"], theme["next_post_at"] - theme["interval_min"] * 60)
+            last_post = theme["last_post_at"]
             if now - last_post < URGENT_GAP:
                 continue
             row = db.tq_urgent(theme["id"], theme["flash_discount"], URGENT_MAX_AGE)
@@ -197,8 +201,7 @@ def post_tick():
         else:
             db.tq_fail(row)
         # intervalo com variação de ±30% (ex.: 10 min vira algo entre 7 e 13), para não parecer robô
-        _last_post[theme["id"]] = now
-        db.update_theme(theme["id"], next_post_at=now + theme["interval_min"] * 60 * random.uniform(1 - JITTER, 1 + JITTER))
+        db.update_theme(theme["id"], last_post_at=now, next_post_at=now + next_gap(theme["interval_min"]))
 
 
 def has_work():
@@ -338,6 +341,8 @@ def command(cmd, text, reply, ctx):
                 fields["min_discount"] = int(val)
             elif key == "intervalo" and val.isdigit() and int(val) > 0:
                 fields["interval_min"] = int(val)
+                # vale já: o próximo post passa a contar do último post com o novo intervalo
+                fields["next_post_at"] = (t["last_post_at"] or time.time()) + next_gap(int(val))
             elif key == "horario" and re.fullmatch(r"\d{1,2}-\d{1,2}", val):
                 a, b = (int(x) for x in val.split("-"))
                 if 0 <= a <= 23 and 0 <= b <= 24:
