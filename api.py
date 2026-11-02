@@ -101,6 +101,18 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(401, {"error": "chave inválida"})
         if self.path == "/api/manual":
             return self._manual()
+        if self.path == "/api/terms":
+            # adiciona termos a um tema (mesmo efeito do /termos no WhatsApp)
+            try:
+                b = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                t = db.theme_by_id(int(b["theme_id"]))
+                terms = [x.strip() for x in b.get("terms", []) if isinstance(x, str) and x.strip()]
+            except (ValueError, KeyError, TypeError):
+                return self._json(400, {"error": "corpo inválido"})
+            if not t or not terms:
+                return self._json(400, {"error": "tema ou termos inválidos"})
+            db.add_terms(t["id"], terms)
+            return self._json(200, {"terms": db.list_terms(t["id"])})
         if self.path != "/api/offers":
             return self._json(404, {"error": "não encontrado"})
         try:

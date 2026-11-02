@@ -80,7 +80,7 @@ def find_offers(theme, term):
     if term.lower().startswith("ml:"):
         # termo do Mercado Livre: API oficial, link com a etiqueta de afiliado
         term = term[3:].strip()
-        is_link = False
+        is_link = term.lower().startswith("top")  # mais vendidos: não filtra pelo texto do termo
         results = [dict(p, asin=p["id"], units=scraper.parse_units(p["title"])) for p in ml.search(term)]
     elif term.lower().startswith("shopee:"):
         # termo da Shopee: busca pela API oficial, link já vem de afiliado
@@ -206,7 +206,7 @@ HELP = (
     "/tema &lt;Nome&gt; - mande dentro do grupo para ligá-lo ao tema (cria se não existir)\n"
     "/termos &lt;Nome&gt; termo 1, termo 2 - termos buscados na Amazon (ou links de busca colados)\n"
     "/termos &lt;Nome&gt; shopee:fralda, shopee:mamadeira - busca na Shopee (API oficial)\n"
-    "/termos &lt;Nome&gt; ml:fralda, ml:mamadeira - busca no Mercado Livre (API oficial)\n"
+    "/termos &lt;Nome&gt; ml:fralda, ml:mamadeira - busca no Mercado Livre (API oficial); ml:top = mais vendidos de Bebês\n"
     "/remover_termo &lt;Nome&gt; termo\n"
     "/excluir &lt;Nome&gt; palavra 1, palavra 2 - ignora produtos com essas palavras\n"
     "/config &lt;Nome&gt; desconto=15 intervalo=25 horario=8-22 max=150 tag=seunome-20\n"

@@ -117,7 +117,7 @@ def _products(term, limit):
         cat = term[3:].strip() or BABY_CATEGORY
         ids = [c["id"] for c in _json(f"/highlights/MLB/category/{cat}").get("content", []) if c.get("type") == "PRODUCT"]
         return [{"id": pid} for pid in ids[:limit]]
-    return _json("/products/search", status="active", site_id="MLB", q=term, limit=limit).get("results", [])[:limit]
+    return _json("/products/search", status="active", site_id="MLB", q=term, limit=50).get("results", [])[: limit * 2]
 
 
 def search(term, limit=15):
@@ -127,6 +127,8 @@ def search(term, limit=15):
         raise RuntimeError("Mercado Livre não configurado (ML_CLIENT_ID e ML_CLIENT_SECRET)")
     out = []
     for prod in _products(term, limit):
+        if len(out) >= limit:
+            break
         pid = prod["id"]
         try:
             items = _json(f"/products/{pid}/items").get("results", [])
