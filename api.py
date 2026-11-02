@@ -66,6 +66,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._ml_callback()
         if not self._authorized():
             return self._json(401, {"error": "chave inválida"})
+        if self.path.startswith("/api/ml/search"):
+            # teste: busca no Mercado Livre e mostra o resumo do que voltou
+            q = dict(parse_qsl(urlsplit(self.path).query)).get("q", "fralda")
+            try:
+                res = ml.search(q)
+            except Exception as e:
+                return self._json(502, {"error": str(e)[:300]})
+            return self._json(200, {"total": len(res), "com_desconto": sum(r["discount"] > 0 for r in res), "exemplos": res[:3]})
         if self.path == "/api/ml":
             return self._json(200, {"enabled": ml.enabled(), "connected": ml.connected(), "login": ml.login_url() if ml.enabled() else None})
         if self.path == "/api/themes":
