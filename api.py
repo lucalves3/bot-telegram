@@ -66,6 +66,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._ml_callback()
         if not self._authorized():
             return self._json(401, {"error": "chave inválida"})
+        if self.path.startswith("/api/ml/get"):
+            # diagnóstico: GET numa rota da API do Mercado Livre com o login do bot (só leitura)
+            path = dict(parse_qsl(urlsplit(self.path).query)).get("path", "/users/me")
+            if not path.startswith("/") or "://" in path:
+                return self._json(400, {"error": "path inválido"})
+            try:
+                r = ml.get(path)
+                return self._json(200, {"status": r.status_code, "body": r.text[:3000]})
+            except Exception as e:
+                return self._json(502, {"error": str(e)[:300]})
         if self.path.startswith("/api/ml/search"):
             # teste: busca no Mercado Livre e mostra o resumo do que voltou
             q = dict(parse_qsl(urlsplit(self.path).query)).get("q", "fralda")

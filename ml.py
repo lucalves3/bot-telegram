@@ -88,6 +88,11 @@ def _access_token():
     return tok["access_token"]
 
 
+def get(path, **params):
+    """GET autenticado na API (devolve a resposta crua)."""
+    return requests.get(f"{API}{path}", params=params or None, headers={"Authorization": f"Bearer {_access_token()}"}, timeout=30)
+
+
 def affiliate(url):
     """Link do produto com a etiqueta de afiliado (mesmos parâmetros do meli.la)."""
     parts = urlsplit(url)
