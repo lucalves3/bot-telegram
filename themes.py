@@ -43,15 +43,37 @@ def _excluded(title, theme):
     return any(w in t for w in words)
 
 
+def remote_amazon():
+    """AMAZON_REMOTE=1 (no servidor): a Amazon é buscada pelo coletor no PC, não aqui."""
+    return os.getenv("AMAZON_REMOTE", "") == "1"
+
+
+def enqueue(theme_id, offers):
+    """Põe na fila as ofertas ainda não postadas (ou 5% mais baratas). Devolve quantas entraram."""
+    seen = db.theme_seen(theme_id)
+    added = 0
+    for p in offers:
+        last = seen.get(p["asin"])
+        if last is not None and p["price"] >= last * 0.95:
+            continue  # já postado e não ficou 5% mais barato
+        db.tq_add(theme_id, p["asin"], -p["discount"], json.dumps(p))
+        db.set_theme_seen(theme_id, p["asin"], p["price"])
+        added += 1
+    return added
+
+
 def check_term(term_row):
     """Busca um termo e coloca na fila do tema as ofertas que passam nos filtros. Devolve quantas."""
     theme = db.theme_by_id(term_row["theme_id"])
     db.touch_term(term_row["id"])
     if not theme:
         return 0
-    term = term_row["term"]
-    seen = db.theme_seen(theme["id"])
-    added = 0
+    return enqueue(theme["id"], find_offers(theme, term_row["term"]))
+
+
+def find_offers(theme, term):
+    """Busca o termo (Amazon ou shopee:) e devolve as ofertas que passam nos filtros do tema."""
+    offers = []
     if term.lower().startswith("shopee:"):
         # termo da Shopee: busca pela API oficial, link já vem de afiliado
         term = term[7:].strip()
@@ -68,10 +90,7 @@ def check_term(term_row):
             continue
         if _excluded(p["title"], theme) or (not is_link and not scraper.relevant(p["title"], term)):
             continue
-        last = seen.get(p["asin"])
-        if last is not None and p["price"] >= last * 0.95:
-            continue  # já postado e não ficou 5% mais barato
-        payload = {
+        offers.append({
             "title": p["title"],
             "price": p["price"],
             "list_price": p["list_price"],
@@ -82,11 +101,8 @@ def check_term(term_row):
             "asin": p["asin"],
             "url": p.get("url"),  # Shopee: link de afiliado pronto
             "seen_at": datetime.now(BRT).strftime("%H:%M"),
-        }
-        db.tq_add(theme["id"], p["asin"], -p["discount"], json.dumps(payload))
-        db.set_theme_seen(theme["id"], p["asin"], p["price"])
-        added += 1
-    return added
+        })
+    return offers
 
 
 def search_tick(force=False):
@@ -95,6 +111,9 @@ def search_tick(force=False):
     if not force and time.time() - _last_search < term_gap():
         return
     row = db.due_term(term_interval())
+    while row and remote_amazon() and not row["term"].lower().startswith("shopee:"):
+        db.touch_term(row["id"])  # Amazon fica com o coletor do PC
+        row = db.due_term(term_interval())
     if not row:
         return
     _last_search = time.time()

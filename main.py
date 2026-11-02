@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 from dotenv import load_dotenv
 
 import affiliate
+import api
 import db
 import messages
 import scraper
@@ -450,11 +451,13 @@ def run():
     next_check = next_send = 0
     offset = None
     print("Bot rodando. Ctrl+C para sair.")
+    api.start()  # recebe ofertas do coletor do PC (se INGEST_TOKEN estiver configurado)
     while True:
         whatsapp.ensure_bridge()  # sobe/reinicia a ponte do WhatsApp quando ligada
         qr_tick()
         if time.time() >= next_check:
-            check_all()
+            if not themes.remote_amazon():  # categorias antigas buscam na Amazon (no servidor dá 503)
+                check_all()
             next_check = time.time() + interval
         queued = bool(db.queue_counts())
         if queued and time.time() >= next_send:
