@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import json
 import os
+import random
 import time
 from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qsl
 
@@ -117,10 +118,16 @@ def _products(term, limit):
         cat = term[3:].strip() or BABY_CATEGORY
         ids = [c["id"] for c in _json(f"/highlights/MLB/category/{cat}").get("content", []) if c.get("type") == "PRODUCT"]
         return [{"id": pid} for pid in ids[:limit]]
-    return _json("/products/search", status="active", site_id="MLB", q=term, limit=50).get("results", [])[: limit * 2]
+    # alterna a página a cada rodada para não ver sempre os mesmos produtos do topo
+    offset = random.choice((0, 0, 50, 100))
+    res = _json("/products/search", status="active", site_id="MLB", q=term, limit=50, offset=offset).get("results", [])
+    if not res and offset:
+        res = _json("/products/search", status="active", site_id="MLB", q=term, limit=50).get("results", [])
+    random.shuffle(res)
+    return res[: limit * 2]
 
 
-def search(term, limit=15):
+def search(term, limit=25):
     """Ofertas do termo no Mercado Livre, no mesmo formato do scraper da Amazon.
     Para cada produto do catálogo pega a oferta mais barata e o preço original (para o desconto)."""
     if not enabled():

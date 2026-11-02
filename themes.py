@@ -6,6 +6,7 @@ um ritmo de postagem com janela de horário e os grupos (Telegram/WhatsApp) que 
 import html
 import json
 import os
+import random
 import re
 import time
 from datetime import datetime, timedelta, timezone
@@ -24,6 +25,8 @@ BRT = timezone(timedelta(hours=-3))
 QUEUE_MAX_AGE = 2 * 3600  # oferta na fila há mais de 2h é descartada (preço pode ter mudado)
 URGENT_MAX_AGE = 20 * 60  # fura-fila só vale para oferta achada há no máximo 20 min
 URGENT_GAP = 5 * 60  # respiro mínimo entre dois posts quando uma oferta fura a fila
+JITTER = 0.3  # variação do intervalo de postagem (±30%)
+_last_post = {}  # tema -> hora do último post
 
 
 def term_interval():
@@ -173,7 +176,7 @@ def post_tick():
             row = db.tq_next(theme["id"], QUEUE_MAX_AGE)
         else:
             # fura-fila: relâmpago ou desconto alto, recém-achada, com respiro desde o último post
-            last_post = theme["next_post_at"] - theme["interval_min"] * 60
+            last_post = _last_post.get(theme["id"], theme["next_post_at"] - theme["interval_min"] * 60)
             if now - last_post < URGENT_GAP:
                 continue
             row = db.tq_urgent(theme["id"], theme["flash_discount"], URGENT_MAX_AGE)
@@ -193,7 +196,9 @@ def post_tick():
             db.tq_done(row)
         else:
             db.tq_fail(row)
-        db.update_theme(theme["id"], next_post_at=now + theme["interval_min"] * 60)
+        # intervalo com variação de ±30% (ex.: 10 min vira algo entre 7 e 13), para não parecer robô
+        _last_post[theme["id"]] = now
+        db.update_theme(theme["id"], next_post_at=now + theme["interval_min"] * 60 * random.uniform(1 - JITTER, 1 + JITTER))
 
 
 def has_work():
@@ -230,7 +235,7 @@ def _describe(t):
         f"<b>{html.escape(t['name'])}</b>",
         f"Grupos: {tg} Telegram, {wa} WhatsApp | Fila: {queued}",
         f"Desconto mín.: {t['min_discount']}% | Máx.: {brl(t['max_total']) if t['max_total'] else 'sem limite'}",
-        f"1 oferta a cada {t['interval_min']} min, das {t['hour_start']}h às {t['hour_end']}h",
+        f"1 oferta a cada ~{t['interval_min']} min ({round(t['interval_min'] * (1 - JITTER))}-{round(t['interval_min'] * (1 + JITTER))}), das {t['hour_start']}h às {t['hour_end']}h",
         "Fura-fila: ofertas relâmpago" + (f" e com {t['flash_discount']}%+ de desconto" if t["flash_discount"] else ""),
         f"Tag: {t['tag'] or 'padrão do canal'}",
         f"Convite: {html.escape(t['invite']) if t['invite'] else '(nenhum, use /config Nome convite=link)'}",

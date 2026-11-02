@@ -122,6 +122,10 @@ def init():
         cols = {r["name"] for r in c.execute("PRAGMA table_info(items)")}
         if "units" not in cols:
             c.execute("ALTER TABLE items ADD COLUMN units INTEGER")
+        if "seen_ts" not in {r["name"] for r in c.execute("PRAGMA table_info(theme_seen)")}:
+            # quando o produto foi visto; os já vistos contam a partir de agora
+            c.execute("ALTER TABLE theme_seen ADD COLUMN seen_ts REAL NOT NULL DEFAULT 0")
+            c.execute("UPDATE theme_seen SET seen_ts = ?", (time.time(),))
         theme_cols = {r["name"] for r in c.execute("PRAGMA table_info(themes)")}
         if "invite" not in theme_cols:
             c.execute("ALTER TABLE themes ADD COLUMN invite TEXT")
@@ -377,18 +381,25 @@ def theme_of_chat(channel, chat_id):
         return row["theme_id"] if row else None
 
 
+REPOST_DAYS = float(os.getenv("REPOST_DAYS", "7"))  # produto já postado pode voltar depois desses dias
+
+
 def theme_seen(theme_id):
+    """Produtos vistos nos últimos REPOST_DAYS dias (os mais antigos podem ser postados de novo)."""
     with conn() as c:
-        rows = c.execute("SELECT asin, price FROM theme_seen WHERE theme_id = ?", (theme_id,)).fetchall()
+        rows = c.execute(
+            "SELECT asin, price FROM theme_seen WHERE theme_id = ? AND seen_ts >= ?",
+            (theme_id, time.time() - REPOST_DAYS * 86400),
+        ).fetchall()
         return {r["asin"]: r["price"] for r in rows}
 
 
 def set_theme_seen(theme_id, asin, price):
     with conn() as c:
         c.execute(
-            "INSERT INTO theme_seen (theme_id, asin, price) VALUES (?, ?, ?) "
-            "ON CONFLICT(theme_id, asin) DO UPDATE SET price = excluded.price",
-            (theme_id, asin, price),
+            "INSERT INTO theme_seen (theme_id, asin, price, seen_ts) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(theme_id, asin) DO UPDATE SET price = excluded.price, seen_ts = excluded.seen_ts",
+            (theme_id, asin, price, time.time()),
         )
 
 
