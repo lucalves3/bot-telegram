@@ -36,6 +36,7 @@
     <ol>
       <li>Arraste este botão para a barra de favoritos: <a class="bm" id="bm" href="#">➕ Oferta pro bot</a></li>
       <li>Abra um produto na Amazon e clique no favorito. Esta página abre preenchida.</li>
+      <li>No Mercado Livre: clique antes em <b>Compartilhar</b> (barra de afiliado no topo) e depois no favorito.</li>
     </ol>
     <label for="key">Chave do bot (só na primeira vez; fica salva neste navegador)</label>
     <input id="key" type="password" autocomplete="off" placeholder="cole a chave aqui">
@@ -44,8 +45,11 @@
   <div class="card">
     <label for="theme">Tema</label>
     <select id="theme"><option value="">carregando…</option></select>
-    <label for="url">Link do produto na Amazon</label>
+    <label for="url">Link do produto (Amazon ou Mercado Livre)</label>
     <input id="url" placeholder="https://www.amazon.com.br/dp/...">
+    <label for="aff">Link de afiliado do Mercado Livre (meli.la; vazio na Amazon)</label>
+    <input id="aff" placeholder="https://meli.la/...">
+
     <label for="title">Título</label>
     <textarea id="title"></textarea>
     <div class="row">
@@ -67,7 +71,9 @@ $("key").value = store.get("bot-key");
 if ($("key").value) $("setup").querySelector("label").textContent = "Chave do bot (salva)";
 
 // favorito: lê a página do produto que o usuário está vendo e abre este painel preenchido (dados no #, não vão ao servidor pela URL)
-const bm = `javascript:(()=>{const q=s=>document.querySelector(s);const t=x=>x?x.textContent.trim():"";const d={url:location.href.split("?")[0],title:t(q("#productTitle")),price:t(q(".priceToPay .a-offscreen")||q("#corePrice_feature_div .a-offscreen")||q("#corePriceDisplay_desktop_feature_div .a-price .a-offscreen")),list:t(q(".basisPrice .a-offscreen")||q("#corePriceDisplay_desktop_feature_div .a-text-price .a-offscreen")),image:(q("#landingImage")||{}).src||"",flash:/rel[aâ]mpago|tempo limitado/i.test(t(q("#dealBadge_feature_div"))+t(q("#corePriceDisplay_desktop_feature_div"))+t(q("#apex_desktop")))};window.open("${location.origin}/painel#"+encodeURIComponent(JSON.stringify(d)))})()`;
+// Mercado Livre: precisa clicar em "Compartilhar" na barra de afiliado antes (gera o link meli.la)
+const bmML = `const ml=()=>{const pr=q(".ui-pdp-price__second-line [itemprop=price]");const ant=q(".ui-pdp-price s.andes-money-amount--previous");const m=ant&&(ant.getAttribute("aria-label")||"").match(/(\\d[\\d.]*) reais(?: com (\\d+) centavos)?/);const link=[...document.querySelectorAll("input,textarea")].map(i=>i.value).find(v=>/^https:\\/\\/meli\\.la\\//.test(v));if(!link){alert("Clique em Compartilhar na barra de afiliado do Mercado Livre e depois de novo no favorito.");return null}return{url:location.href.split("?")[0].split("#")[0],aff:link,title:t(q("h1.ui-pdp-title")),price:pr?pr.content.replace(".",","):"",list:m?m[1].replace(/\\./g,"")+","+(m[2]||"00"):"",image:(q(".ui-pdp-gallery__figure img")||{}).src||"",flash:/rel[aâ]mpago|oferta do dia/i.test(t(q(".ui-pdp-promotions-pill-label"))+t(q(".ui-pdp-header__subtitle")))}};`;
+const bm = `javascript:(()=>{const q=s=>document.querySelector(s);const t=x=>x?x.textContent.trim():"";${bmML}const d=/mercadoli[vb]re/.test(location.host)?ml():{url:location.href.split("?")[0],title:t(q("#productTitle")),price:t(q(".priceToPay .a-offscreen")||q("#corePrice_feature_div .a-offscreen")||q("#corePriceDisplay_desktop_feature_div .a-price .a-offscreen")),list:t(q(".basisPrice .a-offscreen")||q("#corePriceDisplay_desktop_feature_div .a-text-price .a-offscreen")),image:(q("#landingImage")||{}).src||"",flash:/rel[aâ]mpago|tempo limitado/i.test(t(q("#dealBadge_feature_div"))+t(q("#corePriceDisplay_desktop_feature_div"))+t(q("#apex_desktop")))};if(!d)return;window.open("${location.origin}/painel#"+encodeURIComponent(JSON.stringify(d)))})()`;
 $("bm").href = bm;
 $("bm").addEventListener("click", (e) => e.preventDefault()); // aqui só serve para arrastar
 
@@ -75,7 +81,7 @@ function fill() {
   if (!location.hash) return;
   try {
     const d = JSON.parse(decodeURIComponent(location.hash.slice(1)));
-    $("url").value = d.url || ""; $("title").value = d.title || "";
+    $("url").value = d.url || ""; $("aff").value = d.aff || ""; $("title").value = d.title || "";
     $("price").value = (d.price || "").replace(/R\$\s*/, ""); $("list").value = (d.list || "").replace(/R\$\s*/, "");
     $("image").value = d.image || ""; $("flash").checked = !!d.flash; showImg();
   } catch {}
@@ -104,7 +110,7 @@ $("send").addEventListener("click", async () => {
   $("send").disabled = true;
   try {
     const r = await api("/api/manual", { method: "POST", body: JSON.stringify({
-      theme_id: Number($("theme").value), url: $("url").value.trim(), title: $("title").value.trim(),
+      theme_id: Number($("theme").value), url: $("url").value.trim(), aff: $("aff").value.trim(), title: $("title").value.trim(),
       price: $("price").value, list_price: $("list").value, image: $("image").value.trim(), flash: $("flash").checked }) });
     store.set("bot-theme", $("theme").value);
     msg.className = "ok"; msg.textContent = `✅ Na fila! ${r.discount ? r.discount + "% off. " : ""}${r.flash ? "Sai na hora." : "Sai no próximo horário do tema."}`;

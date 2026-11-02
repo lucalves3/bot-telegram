@@ -98,13 +98,23 @@ class Handler(BaseHTTPRequestHandler):
             theme_id = int(b["theme_id"])
         except (ValueError, KeyError, TypeError):
             return self._json(400, {"error": "escolha o tema"})
-        asin = re.search(r"/(?:dp|gp/product|gp/aw/d)/([A-Z0-9]{10})", b.get("url", ""))
+        url = b.get("url", "")
+        aff = (b.get("aff") or "").strip()
         price = scraper.parse_price(str(b.get("price", "")))
         title = (b.get("title") or "").strip()
         if not db.theme_by_id(theme_id):
             return self._json(404, {"error": "tema não existe"})
-        if not asin:
-            return self._json(400, {"error": "link da Amazon sem código do produto (/dp/...)"})
+        if re.search(r"mercadoli[vb]re\.com|meli\.la", url + aff):
+            # Mercado Livre: o link de afiliado (meli.la) vem pronto da barra "Compartilhar"
+            mlb = re.search(r"MLB-?(\d+)", url)
+            if not re.match(r"https://meli\.la/\w+$", aff):
+                return self._json(400, {"error": "cole o link de afiliado meli.la (botão Compartilhar do Mercado Livre)"})
+            product_id, link = f"ml:MLB{mlb.group(1)}" if mlb else f"ml:{aff.rsplit('/', 1)[1]}", aff
+        else:
+            asin = re.search(r"/(?:dp|gp/product|gp/aw/d)/([A-Z0-9]{10})", url)
+            if not asin:
+                return self._json(400, {"error": "link da Amazon sem código do produto (/dp/...)"})
+            product_id, link = asin.group(1), None  # Amazon: tag de afiliado é posta na hora de postar
         if not price or not title:
             return self._json(400, {"error": "preencha título e preço"})
         list_price = scraper.parse_price(str(b.get("list_price", ""))) or None
@@ -120,15 +130,15 @@ class Handler(BaseHTTPRequestHandler):
             "units": units,
             "size": scraper.parse_size(title, units),
             "image": (b.get("image") or "").strip() or None,
-            "asin": asin.group(1),
-            "url": None,
+            "asin": product_id,
+            "url": link,
             "flash": bool(b.get("flash")),
             "manual": True,
             "seen_at": datetime.now(themes.BRT).strftime("%H:%M"),
         }
         # escolhida a dedo: 50 pontos à frente das achadas pela busca
-        db.tq_add(theme_id, offer["asin"], -discount - 50, json.dumps(offer))
-        db.set_theme_seen(theme_id, offer["asin"], price)
+        db.tq_add(theme_id, product_id, -discount - 50, json.dumps(offer))
+        db.set_theme_seen(theme_id, product_id, price)
         print(f"[painel] tema {theme_id}: {title[:50]} ({discount}% off){' RELÂMPAGO' if offer['flash'] else ''}")
         self._json(200, {"ok": True, "discount": discount, "flash": offer["flash"]})
 
