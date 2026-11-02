@@ -12,6 +12,7 @@ import os
 import re
 import sys
 import threading
+import time
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -86,6 +87,21 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, {"total": len(res), "com_desconto": sum(r["discount"] > 0 for r in res), "exemplos": res[:3]})
         if self.path == "/api/ml":
             return self._json(200, {"enabled": ml.enabled(), "connected": ml.connected(), "login": ml.login_url() if ml.enabled() else None})
+        if self.path == "/api/status":
+            # fila por tema e última busca de cada termo
+            counts = db.tq_counts()
+            with db.conn() as c:
+                terms = c.execute("SELECT theme_id, term, last_checked FROM theme_terms ORDER BY theme_id, term").fetchall()
+                queue = c.execute("SELECT theme_id, asin, prio, ts FROM theme_queue").fetchall()
+            return self._json(200, {
+                "fila": {str(k): v for k, v in counts.items()},
+                "fila_por_loja": {
+                    "ml": sum(q["asin"].startswith("ml:") for q in queue),
+                    "shopee": sum(q["asin"].startswith("shopee:") for q in queue),
+                    "amazon": sum(not q["asin"].startswith(("ml:", "shopee:")) for q in queue),
+                },
+                "termos": [{"tema": t["theme_id"], "termo": t["term"][:60], "buscado_ha_min": round((time.time() - t["last_checked"]) / 60) if t["last_checked"] else None} for t in terms],
+            })
         if self.path == "/api/themes":
             return self._json(200, [{"id": t["id"], "name": t["name"]} for t in db.list_themes()])
         if self.path == "/api/terms":
