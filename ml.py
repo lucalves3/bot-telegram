@@ -120,10 +120,13 @@ def _products(term, limit):
         return [{"id": pid} for pid in ids]  # destaques vêm prontos (até ~20 por categoria)
     # alterna as páginas a cada rodada para não ver sempre os mesmos produtos do topo
     want = int(limit * 1.5)  # parte dos produtos não tem oferta ativa
-    start = random.choice((0, 0, 50, 100))
+    start = random.choice((0, 0, 50))
     res = []
     for offset in range(start, start + want + 49, 50):
-        page = _json("/products/search", status="active", site_id="MLB", q=term, limit=50, offset=offset).get("results", [])
+        try:
+            page = _json("/products/search", status="active", site_id="MLB", q=term, limit=50, offset=offset).get("results", [])
+        except requests.HTTPError:
+            break  # a API limita até onde dá para paginar
         res += page
         if len(page) < 50 or len(res) >= want:
             break
