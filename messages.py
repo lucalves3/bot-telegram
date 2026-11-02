@@ -31,7 +31,7 @@ def per_size(price, amount, kind):
 def product_caption(p, category, url, invite=None):
     """Mensagem de um produto da fila. p: dict com title, price, units, size, seen_at.
     invite: link do grupo, para quem receber a mensagem encaminhada poder entrar."""
-    lines = [random.choice(INTROS)]
+    lines = ["⚡ <b>OFERTA RELÂMPAGO!</b> Corre que acaba rápido!"] if p.get("flash") else [random.choice(INTROS)]
     lines += ["", f"<b>{html.escape(p['title'][:90])}</b>", ""]
     if p.get("list_price"):
         lines.append(f"🏷️ De <s>{brl(p['list_price'])}</s> por <b>{brl(p['price'])}</b> ({p['discount']}% off)")

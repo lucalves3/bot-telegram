@@ -20,7 +20,9 @@ import whatsapp
 from messages import brl
 
 BRT = timezone(timedelta(hours=-3))
-QUEUE_MAX_AGE = 3 * 3600  # oferta na fila há mais de 3h é descartada (preço pode ter mudado)
+QUEUE_MAX_AGE = 2 * 3600  # oferta na fila há mais de 2h é descartada (preço pode ter mudado)
+URGENT_MAX_AGE = 20 * 60  # fura-fila só vale para oferta achada há no máximo 20 min
+URGENT_GAP = 5 * 60  # respiro mínimo entre dois posts quando uma oferta fura a fila
 
 
 def term_interval():
@@ -100,6 +102,7 @@ def find_offers(theme, term):
             "image": p.get("image"),
             "asin": p["asin"],
             "url": p.get("url"),  # Shopee: link de afiliado pronto
+            "flash": bool(p.get("flash")),
             "seen_at": datetime.now(BRT).strftime("%H:%M"),
         })
     return offers
@@ -155,12 +158,19 @@ def post_tick():
     """Posta a melhor oferta de cada tema cuja vez chegou (intervalo + janela de horário)."""
     now = time.time()
     for theme in db.list_themes():
-        if now < theme["next_post_at"] or not in_window(theme):
+        if not in_window(theme):
             continue
         groups = db.theme_groups(theme["id"])
         if not groups:
             continue
-        row = db.tq_next(theme["id"], QUEUE_MAX_AGE)
+        if now >= theme["next_post_at"]:
+            row = db.tq_next(theme["id"], QUEUE_MAX_AGE)
+        else:
+            # fura-fila: relâmpago ou desconto alto, recém-achada, com respiro desde o último post
+            last_post = theme["next_post_at"] - theme["interval_min"] * 60
+            if now - last_post < URGENT_GAP:
+                continue
+            row = db.tq_urgent(theme["id"], theme["flash_discount"], URGENT_MAX_AGE)
         if not row:
             continue
         p = json.loads(row["payload"])
@@ -193,6 +203,7 @@ HELP = (
     "/remover_termo &lt;Nome&gt; termo\n"
     "/excluir &lt;Nome&gt; palavra 1, palavra 2 - ignora produtos com essas palavras\n"
     "/config &lt;Nome&gt; desconto=15 intervalo=25 horario=8-22 max=150 tag=seunome-20\n"
+    "/config &lt;Nome&gt; relampago=40 - desconto que fura a fila e sai na hora (0 = só ofertas relâmpago)\n"
     "/config &lt;Nome&gt; convite=https://chat.whatsapp.com/... - link do grupo no fim de cada oferta (convite=0 tira)\n"
     "/temas - lista os temas\n"
     "/sair - desliga este grupo do tema\n"
@@ -213,6 +224,7 @@ def _describe(t):
         f"Grupos: {tg} Telegram, {wa} WhatsApp | Fila: {queued}",
         f"Desconto mín.: {t['min_discount']}% | Máx.: {brl(t['max_total']) if t['max_total'] else 'sem limite'}",
         f"1 oferta a cada {t['interval_min']} min, das {t['hour_start']}h às {t['hour_end']}h",
+        "Fura-fila: ofertas relâmpago" + (f" e com {t['flash_discount']}%+ de desconto" if t["flash_discount"] else ""),
         f"Tag: {t['tag'] or 'padrão do canal'}",
         f"Convite: {html.escape(t['invite']) if t['invite'] else '(nenhum, use /config Nome convite=link)'}",
         f"Termos: {html.escape(', '.join(terms)) or '(nenhum, use /termos)'}",
@@ -322,6 +334,8 @@ def command(cmd, text, reply, ctx):
                 fields["max_total"] = None if val in ("0", "-") else scraper.parse_price(val)
             elif key == "tag":
                 fields["tag"] = None if val in ("0", "-") else val
+            elif key == "relampago" and val.isdigit():
+                fields["flash_discount"] = int(val)
             elif key == "convite" and (val in ("0", "-") or val.startswith(("https://", "http://"))):
                 fields["invite"] = None if val in ("0", "-") else val
         if not fields:

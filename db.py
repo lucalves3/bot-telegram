@@ -122,8 +122,12 @@ def init():
         cols = {r["name"] for r in c.execute("PRAGMA table_info(items)")}
         if "units" not in cols:
             c.execute("ALTER TABLE items ADD COLUMN units INTEGER")
-        if "invite" not in {r["name"] for r in c.execute("PRAGMA table_info(themes)")}:
+        theme_cols = {r["name"] for r in c.execute("PRAGMA table_info(themes)")}
+        if "invite" not in theme_cols:
             c.execute("ALTER TABLE themes ADD COLUMN invite TEXT")
+        if "flash_discount" not in theme_cols:
+            # desconto a partir do qual a oferta fura a fila (0 = só relâmpago)
+            c.execute("ALTER TABLE themes ADD COLUMN flash_discount INTEGER NOT NULL DEFAULT 40")
 
 
 def add_item(name, url, target=None, selector=None, units=None):
@@ -270,7 +274,7 @@ def queue_fail(row, max_tries=3):
 
 
 # ---------- temas ----------
-THEME_FIELDS = {"max_total", "min_discount", "interval_min", "hour_start", "hour_end", "tag", "excludes", "next_post_at", "invite"}
+THEME_FIELDS = {"max_total", "min_discount", "interval_min", "hour_start", "hour_end", "tag", "excludes", "next_post_at", "invite", "flash_discount"}
 
 
 def get_theme(name):
@@ -397,7 +401,18 @@ def tq_add(theme_id, asin, prio, payload):
         )
 
 
-AGE_PENALTY = 10  # pontos de desconto perdidos por hora na fila
+AGE_PENALTY = 30  # pontos de desconto perdidos por hora na fila (oferta velha cede lugar à nova)
+
+
+def tq_urgent(theme_id, min_discount, max_age_sec):
+    """Oferta que fura a fila: relâmpago ou desconto >= min_discount (0 = só relâmpago), achada há pouco."""
+    with conn() as c:
+        return c.execute(
+            """SELECT * FROM theme_queue WHERE theme_id = ? AND ts >= ?
+               AND (json_extract(payload, '$.flash') = 1 OR (? > 0 AND -prio >= ?))
+               ORDER BY prio, id LIMIT 1""",
+            (theme_id, time.time() - max_age_sec, min_discount, min_discount),
+        ).fetchone()
 
 
 def tq_next(theme_id, max_age_sec):

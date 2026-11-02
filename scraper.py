@@ -274,6 +274,9 @@ def fetch_listing(url, pages=2):
             list_price = parse_price(strike.get_text()) if strike else None
             if list_price and list_price <= price:
                 list_price = None
+            # selo de oferta com prazo curto (acaba em horas ou quando o estoque da oferta esgota)
+            badge = card.get_text(" ", strip=True).lower()
+            flash = "relâmpago" in badge or "relampago" in badge or "tempo limitado" in badge
             out.append(
                 {
                     "asin": asin,
@@ -283,6 +286,7 @@ def fetch_listing(url, pages=2):
                     "discount": round((1 - price / list_price) * 100) if list_price else 0,
                     "units": parse_units(title),
                     "image": img.get("src") if img else None,
+                    "flash": flash,
                 }
             )
         time.sleep(2)
