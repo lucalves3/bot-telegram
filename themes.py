@@ -141,7 +141,7 @@ def post_tick():
         for g in groups:
             link = affiliate.link(url, g["channel"], theme["tag"])
             try:
-                _send(g["channel"], g["chat_id"], messages.product_caption(p, theme["name"], link), p.get("image"))
+                _send(g["channel"], g["chat_id"], messages.product_caption(p, theme["name"], link, theme["invite"]), p.get("image"))
                 sent += 1
             except Exception as e:
                 print(f"[tema envio] {theme['name']} -> {g['channel']} {g['chat_id']}: {e}")
@@ -164,6 +164,7 @@ HELP = (
     "/remover_termo &lt;Nome&gt; termo\n"
     "/excluir &lt;Nome&gt; palavra 1, palavra 2 - ignora produtos com essas palavras\n"
     "/config &lt;Nome&gt; desconto=15 intervalo=25 horario=8-22 max=150 tag=seunome-20\n"
+    "/config &lt;Nome&gt; convite=https://chat.whatsapp.com/... - link do grupo no fim de cada oferta (convite=0 tira)\n"
     "/temas - lista os temas\n"
     "/sair - desliga este grupo do tema\n"
     "WhatsApp no privado com o bot: /grupos lista os grupos, /ligar &lt;Nome&gt; &lt;nº&gt; e /desligar &lt;nº&gt;\n"
@@ -184,6 +185,7 @@ def _describe(t):
         f"Desconto mín.: {t['min_discount']}% | Máx.: {brl(t['max_total']) if t['max_total'] else 'sem limite'}",
         f"1 oferta a cada {t['interval_min']} min, das {t['hour_start']}h às {t['hour_end']}h",
         f"Tag: {t['tag'] or 'padrão do canal'}",
+        f"Convite: {html.escape(t['invite']) if t['invite'] else '(nenhum, use /config Nome convite=link)'}",
         f"Termos: {html.escape(', '.join(terms)) or '(nenhum, use /termos)'}",
     ]
     if t["excludes"]:
@@ -291,6 +293,8 @@ def command(cmd, text, reply, ctx):
                 fields["max_total"] = None if val in ("0", "-") else scraper.parse_price(val)
             elif key == "tag":
                 fields["tag"] = None if val in ("0", "-") else val
+            elif key == "convite" and (val in ("0", "-") or val.startswith(("https://", "http://"))):
+                fields["invite"] = None if val in ("0", "-") else val
         if not fields:
             reply("Uso: /config &lt;Nome&gt; desconto=15 intervalo=25 horario=8-22 max=150 tag=seunome-20")
             return True

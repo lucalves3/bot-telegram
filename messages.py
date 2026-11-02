@@ -28,8 +28,9 @@ def per_size(price, amount, kind):
     return f"{brl(per * 100)} por 100 {kind}"
 
 
-def product_caption(p, category, url):
-    """Mensagem de um produto da fila. p: dict com title, price, units, size, seen_at."""
+def product_caption(p, category, url, invite=None):
+    """Mensagem de um produto da fila. p: dict com title, price, units, size, seen_at.
+    invite: link do grupo, para quem receber a mensagem encaminhada poder entrar."""
     lines = [random.choice(INTROS)]
     lines += ["", f"<b>{html.escape(p['title'][:90])}</b>", ""]
     if p.get("list_price"):
@@ -44,4 +45,6 @@ def product_caption(p, category, url):
         total = " no total" if units and units > 1 else ""
         lines.append(f"⚖️ {per_size(p['price'], amount, kind)} ({fmt_amount(amount, kind)}{total})")
     lines += ["", f"👉 {url}", "", f"🕐 Preço visto às {p['seen_at']}, pode mudar. Vale conferir!"]
+    if invite:
+        lines += ["", f"📲 Quer mais ofertas assim? Entre no grupo: {invite}"]
     return "\n".join(lines)

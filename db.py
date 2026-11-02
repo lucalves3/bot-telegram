@@ -122,6 +122,8 @@ def init():
         cols = {r["name"] for r in c.execute("PRAGMA table_info(items)")}
         if "units" not in cols:
             c.execute("ALTER TABLE items ADD COLUMN units INTEGER")
+        if "invite" not in {r["name"] for r in c.execute("PRAGMA table_info(themes)")}:
+            c.execute("ALTER TABLE themes ADD COLUMN invite TEXT")
 
 
 def add_item(name, url, target=None, selector=None, units=None):
@@ -268,7 +270,7 @@ def queue_fail(row, max_tries=3):
 
 
 # ---------- temas ----------
-THEME_FIELDS = {"max_total", "min_discount", "interval_min", "hour_start", "hour_end", "tag", "excludes", "next_post_at"}
+THEME_FIELDS = {"max_total", "min_discount", "interval_min", "hour_start", "hour_end", "tag", "excludes", "next_post_at", "invite"}
 
 
 def get_theme(name):
