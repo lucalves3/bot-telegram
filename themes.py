@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 import affiliate
 import db
 import messages
+import ml
 import scraper
 import shopee
 import telegram
@@ -76,7 +77,12 @@ def check_term(term_row):
 def find_offers(theme, term):
     """Busca o termo (Amazon ou shopee:) e devolve as ofertas que passam nos filtros do tema."""
     offers = []
-    if term.lower().startswith("shopee:"):
+    if term.lower().startswith("ml:"):
+        # termo do Mercado Livre: API oficial, link com a etiqueta de afiliado
+        term = term[3:].strip()
+        is_link = False
+        results = [dict(p, asin=p["id"], units=scraper.parse_units(p["title"])) for p in ml.search(term)]
+    elif term.lower().startswith("shopee:"):
         # termo da Shopee: busca pela API oficial, link já vem de afiliado
         term = term[7:].strip()
         is_link = False
@@ -114,7 +120,7 @@ def search_tick(force=False):
     if not force and time.time() - _last_search < term_gap():
         return
     row = db.due_term(term_interval())
-    while row and remote_amazon() and not row["term"].lower().startswith("shopee:"):
+    while row and remote_amazon() and not row["term"].lower().startswith(("shopee:", "ml:")):
         db.touch_term(row["id"])  # Amazon fica com o coletor do PC
         row = db.due_term(term_interval())
     if not row:
@@ -200,6 +206,7 @@ HELP = (
     "/tema &lt;Nome&gt; - mande dentro do grupo para ligá-lo ao tema (cria se não existir)\n"
     "/termos &lt;Nome&gt; termo 1, termo 2 - termos buscados na Amazon (ou links de busca colados)\n"
     "/termos &lt;Nome&gt; shopee:fralda, shopee:mamadeira - busca na Shopee (API oficial)\n"
+    "/termos &lt;Nome&gt; ml:fralda, ml:mamadeira - busca no Mercado Livre (API oficial)\n"
     "/remover_termo &lt;Nome&gt; termo\n"
     "/excluir &lt;Nome&gt; palavra 1, palavra 2 - ignora produtos com essas palavras\n"
     "/config &lt;Nome&gt; desconto=15 intervalo=25 horario=8-22 max=150 tag=seunome-20\n"

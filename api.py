@@ -15,8 +15,10 @@ import threading
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qsl, urlsplit
 
 import db
+import ml
 import scraper
 import themes
 
@@ -60,8 +62,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(page)))
             self.end_headers()
             return self.wfile.write(page)
+        if self.path.startswith("/ml/callback"):
+            return self._ml_callback()
         if not self._authorized():
             return self._json(401, {"error": "chave inválida"})
+        if self.path == "/api/ml":
+            return self._json(200, {"enabled": ml.enabled(), "connected": ml.connected(), "login": ml.login_url() if ml.enabled() else None})
         if self.path == "/api/themes":
             return self._json(200, [{"id": t["id"], "name": t["name"]} for t in db.list_themes()])
         if self.path == "/api/terms":
@@ -90,6 +96,26 @@ class Handler(BaseHTTPRequestHandler):
         added = themes.enqueue(theme_id, offers)
         print(f"[coletor] tema {theme_id}: {len(offers)} recebida(s), {added} na fila")
         self._json(200, {"added": added})
+
+    def _html(self, code, text):
+        page = f"<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'><body style='font:16px system-ui;padding:24px'>{text}".encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(page)
+
+    def _ml_callback(self):
+        """Volta do login do Mercado Livre: troca o código pelo token e guarda no banco."""
+        q = dict(parse_qsl(urlsplit(self.path).query))
+        if not ml.valid_state(q.get("state")) or not q.get("code"):
+            return self._html(400, "❌ Pedido de login inválido ou vencido. Tente de novo pelo painel.")
+        try:
+            ml.exchange(q["code"])
+        except Exception as e:
+            print(f"[ml] login falhou: {e}")
+            return self._html(500, "❌ O Mercado Livre recusou o login. Veja os logs do Railway.")
+        print("[ml] conta do Mercado Livre conectada")
+        self._html(200, "✅ Mercado Livre conectado ao bot! Pode fechar esta página.")
 
     def _manual(self):
         """Oferta escolhida no painel: entra na frente da fila (mesmo se já postada antes)."""

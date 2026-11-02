@@ -40,6 +40,7 @@
     </ol>
     <label for="key">Chave do bot (só na primeira vez; fica salva neste navegador)</label>
     <input id="key" type="password" autocomplete="off" placeholder="cole a chave aqui">
+    <div id="ml" style="margin-top:12px;color:var(--muted)"></div>
   </div>
 
   <div class="card">
@@ -118,7 +119,17 @@ $("send").addEventListener("click", async () => {
   } catch (e) { msg.className = "err"; msg.textContent = "❌ " + e.message; }
   $("send").disabled = false;
 });
-fill(); loadThemes();
+async function loadML() {
+  if (!$("key").value.trim()) return;
+  try {
+    const s = await api("/api/ml");
+    if (!s.enabled) $("ml").textContent = "Mercado Livre: falta ML_CLIENT_ID e ML_CLIENT_SECRET no Railway.";
+    else if (s.connected) $("ml").innerHTML = '✅ Mercado Livre conectado. <a href="' + s.login + '">Reconectar</a>';
+    else $("ml").innerHTML = '<a class="bm" href="' + s.login + '">Conectar Mercado Livre</a>';
+  } catch {}
+}
+$("key").addEventListener("change", loadML);
+fill(); loadThemes(); loadML();
 </script>
 </body>
 </html>
