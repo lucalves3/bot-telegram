@@ -101,32 +101,56 @@ def affiliate(url):
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(q), ""))
 
 
-def search(term, limit=50):
-    """Ofertas do termo no Mercado Livre, no mesmo formato do scraper da Amazon."""
+BABY_CATEGORY = "MLB1384"  # Bebês
+
+
+def _json(path, **params):
+    r = get(path, **params)
+    r.raise_for_status()
+    return r.json()
+
+
+def _products(term, limit):
+    """Produtos de catálogo para o termo. 'top' = mais vendidos de Bebês; 'top MLBxxxx' = de outra categoria.
+    (A busca comum /sites/MLB/search é bloqueada para apps; o catálogo e os destaques não.)"""
+    if term.lower().startswith("top"):
+        cat = term[3:].strip() or BABY_CATEGORY
+        ids = [c["id"] for c in _json(f"/highlights/MLB/category/{cat}").get("content", []) if c.get("type") == "PRODUCT"]
+        return [{"id": pid} for pid in ids[:limit]]
+    return _json("/products/search", status="active", site_id="MLB", q=term, limit=limit).get("results", [])[:limit]
+
+
+def search(term, limit=15):
+    """Ofertas do termo no Mercado Livre, no mesmo formato do scraper da Amazon.
+    Para cada produto do catálogo pega a oferta mais barata e o preço original (para o desconto)."""
     if not enabled():
         raise RuntimeError("Mercado Livre não configurado (ML_CLIENT_ID e ML_CLIENT_SECRET)")
-    r = requests.get(
-        f"{API}/sites/MLB/search",
-        params={"q": term, "limit": limit},
-        headers={"Authorization": f"Bearer {_access_token()}"},
-        timeout=30,
-    )
-    r.raise_for_status()
     out = []
-    for it in r.json().get("results", []):
-        price, orig = it.get("price"), it.get("original_price")
-        if not price:
+    for prod in _products(term, limit):
+        pid = prod["id"]
+        try:
+            items = _json(f"/products/{pid}/items").get("results", [])
+        except requests.HTTPError:
+            continue  # produto sem ofertas ativas
+        items = [i for i in items if i.get("price") and i.get("condition", "new") == "new"]
+        if not items:
             continue
-        list_price = orig if orig and orig > price else None
+        best = min(items, key=lambda i: i["price"])
+        price, orig = float(best["price"]), best.get("original_price")
+        list_price = float(orig) if orig and orig > price else None
+        name, pics = prod.get("name"), prod.get("pictures")
+        if not name or pics is None:
+            info = _json(f"/products/{pid}")
+            name, pics = info.get("name", ""), info.get("pictures") or []
         out.append(
             {
-                "id": f"ml:{it['id']}",
-                "title": it.get("title", ""),
-                "price": float(price),
-                "list_price": float(list_price) if list_price else None,
+                "id": f"ml:{pid}",
+                "title": name,
+                "price": price,
+                "list_price": list_price,
                 "discount": round((1 - price / list_price) * 100) if list_price else 0,
-                "image": (it.get("thumbnail") or "").replace("-I.jpg", "-O.jpg") or None,
-                "url": affiliate(it["permalink"]),
+                "image": (pics[0].get("url") if pics else None),
+                "url": affiliate(f"https://www.mercadolivre.com.br/p/{pid}"),
             }
         )
     return out
