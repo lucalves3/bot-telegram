@@ -117,17 +117,27 @@ def _products(term, limit):
     if term.lower().startswith("top"):
         cat = term[3:].strip() or BABY_CATEGORY
         ids = [c["id"] for c in _json(f"/highlights/MLB/category/{cat}").get("content", []) if c.get("type") == "PRODUCT"]
-        return [{"id": pid} for pid in ids[:limit]]
-    # alterna a página a cada rodada para não ver sempre os mesmos produtos do topo
-    offset = random.choice((0, 0, 50, 100))
-    res = _json("/products/search", status="active", site_id="MLB", q=term, limit=50, offset=offset).get("results", [])
-    if not res and offset:
+        return [{"id": pid} for pid in ids]  # destaques vêm prontos (até ~20 por categoria)
+    # alterna as páginas a cada rodada para não ver sempre os mesmos produtos do topo
+    want = int(limit * 1.5)  # parte dos produtos não tem oferta ativa
+    start = random.choice((0, 0, 50, 100))
+    res = []
+    for offset in range(start, start + want + 49, 50):
+        page = _json("/products/search", status="active", site_id="MLB", q=term, limit=50, offset=offset).get("results", [])
+        res += page
+        if len(page) < 50 or len(res) >= want:
+            break
+    if not res and start:
         res = _json("/products/search", status="active", site_id="MLB", q=term, limit=50).get("results", [])
     random.shuffle(res)
-    return res[: limit * 2]
+    return res[:want]
 
 
-def search(term, limit=25):
+PER_TERM = int(os.getenv("ML_PER_TERM", "50"))  # produtos por termo (cada um é 1 consulta à API)
+
+
+def search(term, limit=None):
+    limit = limit or PER_TERM
     """Ofertas do termo no Mercado Livre, no mesmo formato do scraper da Amazon.
     Para cada produto do catálogo pega a oferta mais barata e o preço original (para o desconto)."""
     if not enabled():
