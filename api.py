@@ -117,6 +117,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(401, {"error": "chave inválida"})
         if self.path == "/api/manual":
             return self._manual()
+        if self.path == "/api/terms/weight":
+            # {theme_id, weights: {termo: peso}}: peso 3 = sai 3x mais no rodízio
+            try:
+                b = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                tid = int(b["theme_id"])
+                done = [k for k, w in b["weights"].items() if db.set_term_weight(tid, k, float(w))]
+            except (ValueError, KeyError, TypeError, AttributeError):
+                return self._json(400, {"error": "corpo inválido"})
+            return self._json(200, {"updated": done})
         if self.path == "/api/terms/remove":
             try:
                 b = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")

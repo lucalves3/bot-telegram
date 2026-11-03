@@ -67,12 +67,27 @@ ESSENTIALS = re.compile(
 )
 
 
+# mais vendidos de categoria trazem coisa de adulto (shampoo L'Oréal, papel toalha): só passa o que é de bebê
+BABY = re.compile(
+    r"beb[êe]|baby|infantil|kids|crian[çc]a|rec[ée]m|neonat|fralda|maternidade|amamenta|mamadeira|chupeta|"
+    r"\bseios?\b|leite materno|cueiro|body|bodies|huggies|pampers|babysec|personal baby|turma da m[ôo]nica|"
+    r"johnson|mustela|granado beb|hipogl[óo]s|bepantol baby|dermodex|desitin|chicco|avent|lillo|\bnuk\b|\bmam\b|kuka|pom pom",
+    re.I,
+)
+DIAPER_SIZE = re.compile(r"fralda.*\b(P|M|G|tamanho [PMG]|tam\.? ?[PMG])\b", re.I)
+
+
 def score(p):
     """Pontos da oferta (maior = melhor). Desconto conta até SUSPECT_DISCOUNT; acima disso perde
-    pontos (desconto de mentira). Itens de compra recorrente (fralda, lenço...) ganham bônus."""
+    pontos (desconto de mentira). Itens de compra recorrente (fralda, lenço...) ganham bônus,
+    fralda P/M/G ainda mais."""
     d = p["discount"]
     pts = d if d <= SUSPECT_DISCOUNT else SUSPECT_DISCOUNT - (d - SUSPECT_DISCOUNT) * 2
-    return pts + (15 if ESSENTIALS.search(p["title"]) else 0)
+    if ESSENTIALS.search(p["title"]):
+        pts += 15
+    if DIAPER_SIZE.search(p["title"]):
+        pts += 15
+    return pts
 
 
 def enqueue(theme_id, offers, term=None):
@@ -125,6 +140,8 @@ def find_offers(theme, term):
             continue
         if store == "ml" and p["price"] > ML_MAX_PRICE:
             continue  # ML: fora itens caros (banheira, carrinho...), que quase ninguém compra pelo grupo
+        if store == "ml" and is_link and not BABY.search(p["title"]):
+            continue  # mais vendidos da categoria, mas não é de bebê
         if _excluded(p["title"], theme) or (not is_link and not scraper.relevant(p["title"], term)):
             continue
         offers.append({

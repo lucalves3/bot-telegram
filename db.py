@@ -132,6 +132,9 @@ def init():
             # fila antiga não sabe de qual termo veio: esvazia e esquece, para voltar com a nova nota
             c.execute("DELETE FROM theme_seen WHERE (theme_id, asin) IN (SELECT theme_id, asin FROM theme_queue)")
             c.execute("DELETE FROM theme_queue")
+        if "weight" not in {r["name"] for r in c.execute("PRAGMA table_info(theme_terms)")}:
+            # peso no rodízio: termo com peso 3 sai 3x mais que um de peso 1
+            c.execute("ALTER TABLE theme_terms ADD COLUMN weight REAL NOT NULL DEFAULT 1")
         theme_cols = {r["name"] for r in c.execute("PRAGMA table_info(themes)")}
         if "invite" not in theme_cols:
             c.execute("ALTER TABLE themes ADD COLUMN invite TEXT")
@@ -454,11 +457,17 @@ def tq_next(theme_id, max_age_sec):
                LEFT JOIN theme_terms t ON t.theme_id = q.theme_id AND t.term = json_extract(q.payload, '$.term')
                WHERE q.theme_id = ?
                ORDER BY CASE WHEN json_extract(q.payload, '$.manual') = 1 THEN 0 ELSE 1 END,
-                        COALESCE(t.last_posted, 9e18),
+                        CASE WHEN t.id IS NULL THEN 1 ELSE 0 END,
+                        (? - t.last_posted) * t.weight DESC,
                         q.prio + (? - q.ts) / 3600.0 * ?, q.id
                LIMIT 1""",
-            (theme_id, now, AGE_PENALTY),
+            (theme_id, now, now, AGE_PENALTY),
         ).fetchone()
+
+
+def set_term_weight(theme_id, term, weight):
+    with conn() as c:
+        return c.execute("UPDATE theme_terms SET weight = ? WHERE theme_id = ? AND term = ?", (weight, theme_id, term)).rowcount > 0
 
 
 def term_posted(theme_id, term):
