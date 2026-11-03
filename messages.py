@@ -1,5 +1,14 @@
 import html
 import random
+import re
+
+# ml/L no título desses é a capacidade do objeto, não o que vem dentro: preço por ml não faz sentido
+CONTAINER = re.compile(
+    r"banheira|\bpotes?\b|mamadeira|\bcopos?\b|garrafa|squeeze|recipiente|frasco|esterilizador|aquecedor|"
+    r"\bbolsa|balde|ofur[ôo]|saquinho|sacos? para leite|armazenamento|porta[ -]|bomba|tira[ -]leite|"
+    r"umidificador|vaporizador|garrafinha|\bkit\b|conjunto|organizador|dosador|prato|tigela",
+    re.I,
+)
 
 INTROS = [
     "Olha só o que apareceu! 👀",
@@ -40,7 +49,7 @@ def product_caption(p, category, url, invite=None):
     units = p.get("units")
     if units and units > 1:
         lines.append(f"📦 {brl(p['price'] / units)} por unidade ({units} un)")
-    if p.get("size"):
+    if p.get("size") and not CONTAINER.search(p.get("title", "")):
         amount, kind = p["size"]
         total = " no total" if units and units > 1 else ""
         lines.append(f"⚖️ {per_size(p['price'], amount, kind)} ({fmt_amount(amount, kind)}{total})")
