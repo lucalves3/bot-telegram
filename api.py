@@ -21,6 +21,7 @@ from urllib.parse import parse_qsl, urlsplit
 import db
 import ml
 import scraper
+import shopee
 import themes
 
 PAINEL = Path(__file__).parent / "painel.html"
@@ -82,6 +83,14 @@ class Handler(BaseHTTPRequestHandler):
             q = dict(parse_qsl(urlsplit(self.path).query)).get("q", "fralda")
             try:
                 res = ml.search(q)
+            except Exception as e:
+                return self._json(502, {"error": str(e)[:300]})
+            return self._json(200, {"total": len(res), "com_desconto": sum(r["discount"] > 0 for r in res), "exemplos": res[:3]})
+        if self.path.startswith("/api/shopee/search"):
+            # teste: busca na Shopee e mostra o resumo do que voltou
+            q = dict(parse_qsl(urlsplit(self.path).query)).get("q", "fralda")
+            try:
+                res = shopee.search(q)
             except Exception as e:
                 return self._json(502, {"error": str(e)[:300]})
             return self._json(200, {"total": len(res), "com_desconto": sum(r["discount"] > 0 for r in res), "exemplos": res[:3]})
