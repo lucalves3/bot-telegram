@@ -74,7 +74,13 @@ BABY = re.compile(
     r"johnson|mustela|granado beb|hipogl[óo]s|bepantol baby|dermodex|desitin|chicco|avent|lillo|\bnuk\b|\bmam\b|kuka|pom pom",
     re.I,
 )
-DIAPER_SIZE = re.compile(r"fralda.*\b(P|M|G|tamanho [PMG]|tam\.? ?[PMG])\b", re.I)
+# nunca é de bebê, venha de onde vier (fralda de cachorro, geriátrica...)
+NOT_BABY = re.compile(
+    r"\bpet\b|newpet|cachorr|\bc[ãa]es\b|\bc[ãa]o\b|canin|\bgat[oa]s?\b|felin|\bcio\b|veterin|"
+    r"geri[áa]tric|\badult|idos[oa]|incontin[êe]ncia|bigfral|tena\b|plenitud|absorvente (?!de seio|para seio)",
+    re.I,
+)
+DIAPER_SIZE =re.compile(r"fralda.*\b(P|M|G|tamanho [PMG]|tam\.? ?[PMG])\b", re.I)
 
 
 def score(p):
@@ -140,6 +146,8 @@ def find_offers(theme, term):
             continue
         if store == "ml" and p["price"] > ML_MAX_PRICE:
             continue  # ML: fora itens caros (banheira, carrinho...), que quase ninguém compra pelo grupo
+        if NOT_BABY.search(p["title"]):
+            continue
         if store == "ml" and is_link and not BABY.search(p["title"]):
             continue  # mais vendidos da categoria, mas não é de bebê
         if _excluded(p["title"], theme) or (not is_link and not scraper.relevant(p["title"], term)):
@@ -223,6 +231,9 @@ def post_tick():
             if now - last_post < URGENT_GAP:
                 continue
             row = db.tq_urgent(theme["id"], theme["flash_discount"], URGENT_MAX_AGE)
+        while row and NOT_BABY.search(json.loads(row["payload"]).get("title", "")):
+            db.tq_done(row)  # entrou antes do filtro: descarta e pega a próxima
+            row = db.tq_next(theme["id"], QUEUE_MAX_AGE)
         if not row:
             continue
         p = json.loads(row["payload"])
