@@ -70,7 +70,7 @@ ESSENTIALS = re.compile(
 # mais vendidos de categoria trazem coisa de adulto (shampoo L'Oréal, papel toalha): só passa o que é de bebê
 BABY = re.compile(
     r"beb[êe]|baby|infantil|kids|crian[çc]a|rec[ée]m|neonat|fralda|maternidade|amamenta|mamadeira|chupeta|"
-    r"\bseios?\b|leite materno|cueiro|body|bodies|lactante|gestante|amamentar|desmame|ber[çc]o|"
+    r"(?:protetor|absorvente|concha)e?s? (?:de |para )?seios?|leite materno|cueiro|body|bodies|lactante|gestante|amamentar|desmame|ber[çc]o|"
     r"mordedor|babador|trocador|\bnan\b|aptamil|milupa|nestog|mucilon|huggies|pampers|babysec|personal baby|turma da m[ôo]nica|"
     r"johnson|mustela|granado beb|hipogl[óo]s|bepantol baby|dermodex|desitin|chicco|avent|lillo|\bnuk\b|\bmam\b|kuka|pom pom",
     re.I,
@@ -78,7 +78,7 @@ BABY = re.compile(
 # nunca é de bebê, venha de onde vier (fralda de cachorro, geriátrica...)
 NOT_BABY = re.compile(
     r"\bpet\b|newpet|cachorr|\bc[ãa]es\b|\bc[ãa]o\b|canin|\bgat[oa]s?\b|felin|\bcio\b|veterin|"
-    r"geri[áa]tric|\badult|idos[oa]|incontin[êe]ncia|bigfral|tena\b|plenitud|absorvente (?!de seio|para seio)",
+    r"geri[áa]tric|\badult|idos[oa]|incontin[êe]ncia|bigfral|tena\b|plenitud|absorvente (?!de seio|para seio)|tapa[ -]?seio|tapa[ -]?mamilo|adesivos? (?:de |para )?(?:mamilo|seio)|mamilo invis|lingerie|suti[ãa](?! de amamenta| amamenta)",
     re.I,
 )
 DIAPER_SIZE =re.compile(r"fralda.*\b(P|M|G|tamanho [PMG]|tam\.? ?[PMG])\b", re.I)
