@@ -36,12 +36,12 @@ def next_gap(interval_min):
 
 def term_interval():
     """Cada termo é buscado no máximo a cada TERM_CHECK_MIN minutos."""
-    return int(os.getenv("TERM_CHECK_MIN", "120")) * 60
+    return int(os.getenv("TERM_CHECK_MIN", "60")) * 60
 
 
 def term_gap():
     """Pausa mínima entre duas buscas na Amazon (evita bloqueio)."""
-    return int(os.getenv("TERM_GAP_SEC", "90"))
+    return int(os.getenv("TERM_GAP_SEC", "60"))
 
 
 _last_search = 0.0
@@ -70,7 +70,8 @@ ESSENTIALS = re.compile(
 # mais vendidos de categoria trazem coisa de adulto (shampoo L'Oréal, papel toalha): só passa o que é de bebê
 BABY = re.compile(
     r"beb[êe]|baby|infantil|kids|crian[çc]a|rec[ée]m|neonat|fralda|maternidade|amamenta|mamadeira|chupeta|"
-    r"\bseios?\b|leite materno|cueiro|body|bodies|huggies|pampers|babysec|personal baby|turma da m[ôo]nica|"
+    r"\bseios?\b|leite materno|cueiro|body|bodies|lactante|gestante|amamentar|desmame|ber[çc]o|"
+    r"mordedor|babador|trocador|\bnan\b|aptamil|milupa|nestog|mucilon|huggies|pampers|babysec|personal baby|turma da m[ôo]nica|"
     r"johnson|mustela|granado beb|hipogl[óo]s|bepantol baby|dermodex|desitin|chicco|avent|lillo|\bnuk\b|\bmam\b|kuka|pom pom",
     re.I,
 )
@@ -148,8 +149,8 @@ def find_offers(theme, term):
             continue  # ML: fora itens caros (banheira, carrinho...), que quase ninguém compra pelo grupo
         if NOT_BABY.search(p["title"]):
             continue
-        if store == "ml" and is_link and not BABY.search(p["title"]):
-            continue  # mais vendidos da categoria, mas não é de bebê
+        if not BABY.search(p["title"]):
+            continue  # nicho: só bebê e amamentação (o título precisa dizer)
         if _excluded(p["title"], theme) or (not is_link and not scraper.relevant(p["title"], term)):
             continue
         offers.append({

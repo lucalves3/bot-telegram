@@ -392,7 +392,7 @@ def theme_of_chat(channel, chat_id):
         return row["theme_id"] if row else None
 
 
-REPOST_DAYS = float(os.getenv("REPOST_DAYS", "7"))  # produto já postado pode voltar depois desses dias
+REPOST_DAYS = float(os.getenv("REPOST_DAYS", "1"))  # produto já postado pode voltar depois desses dias (1 = 1x por dia)
 
 
 def theme_seen(theme_id):
