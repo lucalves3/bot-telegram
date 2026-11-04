@@ -15,7 +15,7 @@ API = "https://open-api.affiliate.shopee.com.br/graphql"
 QUERY = """
 query($keyword: String, $sortType: Int, $page: Int, $limit: Int) {
   productOfferV2(keyword: $keyword, sortType: $sortType, page: $page, limit: $limit) {
-    nodes { itemId productName priceMin priceMax priceDiscountRate sales imageUrl offerLink shopName }
+    nodes { itemId productName priceMin priceMax priceDiscountRate sales imageUrl offerLink shopName commissionRate sellerCommissionRate shopeeCommissionRate }
   }
 }
 """
@@ -69,6 +69,10 @@ def search(keyword, limit=50, sort=2):
                 "sales": int(n.get("sales") or 0),
                 "image": n.get("imageUrl"),
                 "url": n["offerLink"],
+                # taxa de comissão (0.08 = 8%): total, parte paga pela loja e parte paga pela Shopee
+                "commission": float(n.get("commissionRate") or 0),
+                "commission_seller": float(n.get("sellerCommissionRate") or 0),
+                "commission_shopee": float(n.get("shopeeCommissionRate") or 0),
             }
         )
     return out
