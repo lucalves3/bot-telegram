@@ -78,7 +78,11 @@ BABY = re.compile(
 # nunca é de bebê, venha de onde vier (fralda de cachorro, geriátrica...)
 NOT_BABY = re.compile(
     r"\bpet\b|newpet|cachorr|\bc[ãa]es\b|\bc[ãa]o\b|canin|\bgat[oa]s?\b|felin|\bcio\b|veterin|"
-    r"geri[áa]tric|\badult|idos[oa]|incontin[êe]ncia|bigfral|tena\b|plenitud|absorvente (?!de seio|para seio)|tapa[ -]?seio|tapa[ -]?mamilo|adesivos? (?:de |para )?(?:mamilo|seio)|mamilo invis|lingerie|suti[ãa](?! de amamenta| amamenta)",
+    r"geri[áa]tric|\badult|idos[oa]|incontin[êe]ncia|bigfral|tena\b|plenitud|absorvente (?!de seio|para seio)|tapa[ -]?seio|tapa[ -]?mamilo|adesivos? (?:de |para )?(?:mamilo|seio)|mamilo invis|lingerie|suti[ãa](?! de amamenta| amamenta)|"
+    # palavras de bebê com outro sentido: chupeta de bateria, body splash, bico de mangueira...
+    r"bateria|automotiv|ve[íi]cul|\bcarro\b|\bmoto\b|booster|\bamp\b|\d+ ?amp|alicate|ferramenta|mangueira|"
+    r"body ?splash|body feminino|body (?:adulto|renda|manga longa feminino)|bodysuit|\bbico de (?:pato|mangueira|g[áa]s)|"
+    r"\bcelular\b|smartphone|notebook|\bpc\b|gamer|tatuagem|\bsexy\b|er[óo]tic",
     re.I,
 )
 DIAPER_SIZE =re.compile(r"fralda.*\b(P|M|G|tamanho [PMG]|tam\.? ?[PMG])\b", re.I)
