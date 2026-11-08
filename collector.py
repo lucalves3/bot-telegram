@@ -43,7 +43,7 @@ def main():
         try:
             offers = themes.find_offers(t["theme"], t["term"])
             r = requests.post(
-                f"{BASE}/api/offers", headers=HEADERS, json={"theme_id": t["theme"]["id"], "offers": offers}, timeout=30
+                f"{BASE}/api/offers", headers=HEADERS, json={"theme_id": t["theme"]["id"], "term": t["term"], "offers": offers}, timeout=30
             )
             r.raise_for_status()
             print(f"[coletor] {t['theme']['name']} / {label}: {len(offers)} achada(s), {r.json()['added']} nova(s) na fila")

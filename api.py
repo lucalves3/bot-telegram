@@ -168,7 +168,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(400, {"error": "corpo inválido"})
         if not db.theme_by_id(theme_id):
             return self._json(404, {"error": "tema não existe"})
-        added = themes.enqueue(theme_id, offers)
+        # com o termo, a oferta entra no rodízio por termo (e vale o peso dele); sem ele ia pro fim da fila
+        term = body.get("term") if isinstance(body.get("term"), str) else None
+        added = themes.enqueue(theme_id, offers, term)
         print(f"[coletor] tema {theme_id}: {len(offers)} recebida(s), {added} na fila")
         self._json(200, {"added": added})
 
