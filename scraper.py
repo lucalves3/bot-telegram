@@ -122,13 +122,27 @@ PACK_RE = re.compile(r"(?:pacote|pct)\s+(?:com|de)\s+(\d{1,4})\b", re.I)
 KIT_RE = re.compile(r"kit\s*(?:com|de|c/)?\s*(\d{1,2})\b(?!\s*em\s*\d)", re.I)
 
 
+# quantos pacotes vêm no kit: '- 3 Unidades', '3 pacotes', 'Kit com 3'
+PACKS_RE = re.compile(r"(\d{1,2})\s*(?:pacotes?|pcts?|caixas?|refis?|unidades?|un\b)", re.I)
+
+
 def parse_units(title):
-    """Quantidade de unidades do pacote lida do título ('46 Unidades' -> 46)."""
+    """Quantidade de unidades do pacote lida do título ('46 Unidades' -> 46).
+
+    Kits: 'Fralda G 32 Tiras - 3 Unidades' -> 96 (32 por pacote x 3 pacotes)."""
     title = title or ""
     kit = MULTI_RE.search(title)
     if kit:
         return int(kit.group(1)) * int(kit.group(2))
-    m = UNITS_RE.search(title) or PACK_RE.search(title) or KIT_RE.search(title)
+    counts = [int(m.group(1)) for m in UNITS_RE.finditer(title)] + [int(m.group(1)) for m in PACK_RE.finditer(title)]
+    content = max(counts) if counts else None
+    if content and content >= 10:
+        packs = [int(m.group(1)) for m in PACKS_RE.finditer(title)] + [int(m.group(1)) for m in KIT_RE.finditer(title)]
+        mult = next((n for n in packs if 2 <= n <= 12 and n != content), None)
+        return content * mult if mult else content
+    if content:
+        return content
+    m = KIT_RE.search(title)
     return int(m.group(1)) if m else None
 
 

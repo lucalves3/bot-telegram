@@ -314,6 +314,7 @@ def post_tick():
         if not row:
             continue
         p = json.loads(row["payload"])
+        p["units"] = scraper.parse_units(p.get("title", "")) or p.get("units")  # itens que entraram com a conta antiga
         url = f"https://www.amazon.com.br/dp/{p['asin']}"
         sent = 0
         for g in groups:
