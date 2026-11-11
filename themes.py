@@ -180,6 +180,7 @@ def check_term(term_row):
 
 
 PROMO_PAGES = int(os.getenv("PROMO_PAGES", "3"))  # páginas da busca da Amazon lidas no modo promoção
+PROMO_SHOPEE_PAGES = int(os.getenv("PROMO_SHOPEE_PAGES", "3"))  # páginas da Shopee (50 produtos cada) na promoção
 
 
 def find_offers(theme, term, pages=None):
@@ -197,7 +198,9 @@ def find_offers(theme, term, pages=None):
         # termo da Shopee: busca pela API oficial, link já vem de afiliado
         term = term[7:].strip()
         is_link = False
-        results = [dict(p, asin=p["id"], units=scraper.parse_units(p["title"])) for p in shopee.search(term)]
+        # promoção: 3 páginas (150 produtos) em vez de 1; API oficial, sem risco de bloqueio
+        sp_pages = PROMO_SHOPEE_PAGES if pages is None and promo() else 1
+        results = [dict(p, asin=p["id"], units=scraper.parse_units(p["title"])) for p in shopee.search(term, pages=sp_pages)]
     else:
         is_link = term.lower().startswith("http")
         url = scraper.normalize_url(term) if is_link else scraper.search_url(term)

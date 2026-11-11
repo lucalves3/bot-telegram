@@ -46,13 +46,28 @@ def _call(query, variables):
     return data["data"]
 
 
-def search(keyword, limit=50, sort=2):
-    """Ofertas da Shopee para o termo, as mais vendidas primeiro. Mesmo formato do scraper da Amazon."""
+def search(keyword, limit=50, sort=2, pages=1):
+    """Ofertas da Shopee para o termo, as mais vendidas primeiro. Mesmo formato do scraper da Amazon.
+
+    pages: quantas páginas de `limit` produtos ler (1 chamada à API por página)."""
     if not enabled():
         raise RuntimeError("Shopee não configurada (SHOPEE_APP_ID e SHOPEE_SECRET)")
-    nodes = _call(QUERY, {"keyword": keyword, "sortType": sort, "page": 1, "limit": limit})["productOfferV2"]["nodes"]
-    out = []
-    for n in nodes or []:
+    nodes = []
+    for page in range(1, pages + 1):
+        try:
+            got = _call(QUERY, {"keyword": keyword, "sortType": sort, "page": page, "limit": limit})["productOfferV2"]["nodes"] or []
+        except Exception:
+            if page == 1:
+                raise
+            break  # páginas extras são bônus: segue com o que já veio
+        nodes += got
+        if len(got) < limit:
+            break
+    out, seen = [], set()
+    for n in nodes:
+        if n.get("itemId") in seen:
+            continue
+        seen.add(n.get("itemId"))
         try:
             price = float(n["priceMin"])
         except (TypeError, ValueError):
