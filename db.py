@@ -401,12 +401,13 @@ def theme_of_chat(channel, chat_id):
 REPOST_DAYS = float(os.getenv("REPOST_DAYS", "1"))  # produto já postado pode voltar depois desses dias (1 = 1x por dia)
 
 
-def theme_seen(theme_id):
-    """Produtos vistos nos últimos REPOST_DAYS dias (os mais antigos podem ser postados de novo)."""
+def theme_seen(theme_id, window_sec=None):
+    """Produtos vistos nos últimos REPOST_DAYS dias, ou window_sec (os mais antigos podem ser postados de novo)."""
+    window_sec = REPOST_DAYS * 86400 if window_sec is None else window_sec
     with conn() as c:
         rows = c.execute(
             "SELECT asin, price FROM theme_seen WHERE theme_id = ? AND seen_ts >= ?",
-            (theme_id, time.time() - REPOST_DAYS * 86400),
+            (theme_id, time.time() - window_sec),
         ).fetchall()
         return {r["asin"]: r["price"] for r in rows}
 

@@ -156,7 +156,8 @@ def score(p):
 
 def enqueue(theme_id, offers, term=None):
     """Põe na fila as ofertas ainda não postadas (ou 5% mais baratas). Devolve quantas entraram."""
-    seen = db.theme_seen(theme_id)
+    # promoção: produto já postado pode voltar depois de PROMO_REPOST_H horas (fora dela, 1x por dia)
+    seen = db.theme_seen(theme_id, PROMO_REPOST_H * 3600 if promo() else None)
     added = 0
     for p in offers:
         last = seen.get(p["asin"])
@@ -180,6 +181,7 @@ def check_term(term_row):
 
 
 PROMO_PAGES = int(os.getenv("PROMO_PAGES", "3"))  # páginas da busca da Amazon lidas no modo promoção
+PROMO_REPOST_H = float(os.getenv("PROMO_REPOST_H", "4"))  # na promoção, produto já postado volta depois de 4 h
 PROMO_SHOPEE_PAGES = int(os.getenv("PROMO_SHOPEE_PAGES", "3"))  # páginas da Shopee (50 produtos cada) na promoção
 
 
