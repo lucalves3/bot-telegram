@@ -33,7 +33,7 @@ def main():
             print(f"[coletor] não consegui pegar os termos: {e}")
             time.sleep(60)
             continue
-        due = [t for t in terms if time.time() - last.get((t["theme"]["id"], t["term"]), 0) >= themes.term_interval()]
+        due = [t for t in terms if time.time() - last.get((t["theme"]["id"], t["term"]), 0) >= themes.term_interval(promo_on=False)]  # Amazon: sem acelerar na promoção (bloqueia o IP)
         if not due:
             time.sleep(60)
             continue

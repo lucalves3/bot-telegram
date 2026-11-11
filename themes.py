@@ -69,9 +69,18 @@ def theme_interval(theme):
     return promo() or theme["interval_min"]
 
 
-def term_interval():
-    """Cada termo é buscado no máximo a cada TERM_CHECK_MIN minutos."""
-    return int(os.getenv("TERM_CHECK_MIN", "60")) * 60
+PROMO_TERM_MIN = int(os.getenv("PROMO_TERM_MIN", "20"))  # no modo promoção cada termo é buscado a cada 20 min
+PROMO_SEARCH_GAP = 20  # servidor com AMAZON_REMOTE só busca Shopee/ML (API oficial): pausa curta na promoção
+
+
+def term_interval(promo_on=None):
+    """Cada termo é buscado no máximo a cada TERM_CHECK_MIN minutos (PROMO_TERM_MIN no modo promoção).
+
+    promo_on: o coletor do PC passa o que o servidor informou (ele não tem o banco do servidor)."""
+    base = int(os.getenv("TERM_CHECK_MIN", "60")) * 60
+    if promo_on is None:
+        promo_on = bool(promo())
+    return min(base, PROMO_TERM_MIN * 60) if promo_on else base
 
 
 def term_gap():
@@ -227,7 +236,8 @@ def find_offers(theme, term, pages=None):
 def search_tick(force=False):
     """Busca no máximo um termo por chamada, respeitando a pausa entre buscas."""
     global _last_search
-    if not force and time.time() - _last_search < term_gap():
+    gap = PROMO_SEARCH_GAP if remote_amazon() and promo() else term_gap()
+    if not force and time.time() - _last_search < gap:
         return
     row = db.due_term(term_interval())
     while row and remote_amazon() and not row["term"].lower().startswith(("shopee:", "ml:")):
