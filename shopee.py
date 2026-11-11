@@ -25,7 +25,18 @@ def enabled():
     return bool(os.getenv("SHOPEE_APP_ID") and os.getenv("SHOPEE_SECRET"))
 
 
-def _call(query, variables):
+def _call(query, variables, attempts=3):
+    """Chama a API; o erro 10000 (System Error) é instabilidade da Shopee: tenta de novo com pausa."""
+    for i in range(attempts):
+        try:
+            return _call_once(query, variables)
+        except (RuntimeError, requests.RequestException) as e:
+            if i == attempts - 1 or ("10000" not in str(e) and not isinstance(e, requests.RequestException)):
+                raise
+            time.sleep(3 * (i + 1))
+
+
+def _call_once(query, variables):
     app_id, secret = os.getenv("SHOPEE_APP_ID", ""), os.getenv("SHOPEE_SECRET", "")
     body = json.dumps({"query": query, "variables": variables}, separators=(",", ":"))
     ts = str(int(time.time()))
