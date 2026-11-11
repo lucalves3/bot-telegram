@@ -105,7 +105,7 @@ ESSENTIALS = re.compile(
 # mais vendidos de categoria trazem coisa de adulto (shampoo L'Oréal, papel toalha): só passa o que é de bebê
 BABY = re.compile(
     r"beb[êe]|baby|infantil|kids|crian[çc]a|rec[ée]m|neonat|fralda|maternidade|amamenta|mamadeira|chupeta|"
-    r"(?:protetor|absorvente|concha)e?s? (?:de |para )?seios?|len[çc]os? umedecid|toalhas? umedecid|assadura|leite materno|cueiro|body|bodies|lactante|gestante|amamentar|desmame|ber[çc]o|"
+    r"(?:protetor|absorvente|concha)e?s? (?:de |para )?seios?|assadura|leite materno|cueiro|body|bodies|lactante|gestante|amamentar|desmame|ber[çc]o|"
     r"mordedor|babador|trocador|\bnan\b|aptamil|milupa|nestog|mucilon|huggies|pampers|babysec|personal baby|turma da m[ôo]nica|"
     r"johnson|mustela|granado beb|hipogl[óo]s|bepantol baby|dermodex|desitin|chicco|avent|lillo|\bnuk\b|\bmam\b|kuka|pom pom",
     re.I,
@@ -119,9 +119,16 @@ NOT_BABY = re.compile(
     r"body ?splash|body feminino|body (?:adulto|renda|manga longa feminino)|bodysuit|\bbico de (?:pato|mangueira|g[áa]s)|"
     r"\bcelular\b|smartphone|notebook|\bpc\b|gamer|tatuagem|\bsexy\b|er[óo]tic|"
     # linha infantil de cabelo (cachos, liso, Salon Line), não é de bebê
-    r"cach(?:o|inho)s?\b|todecacho|meu liso|salon line|creme de pentear.*\bkids\b|\bkids\b.*creme de pentear",
+    r"^(?!.*(?:baby|beb[êe])).*cach(?:o|inho)s?\b|todecacho|meu liso|salon line|creme de pentear.*\bkids\b|\bkids\b.*creme de pentear|"
+    # lenço umedecido que não é de bebê: óculos, tela, maquiagem, limpeza da casa
+    r"[óo]culos|\blentes?\b|c[âa]mera|anti-?fog|antiemba[çc]|demaquil|maquiagem|multiuso|desinfetante|\bpisos?\b",
     re.I,
 )
+def _is_baby(title):
+    """Título é do nicho: fala de bebê/amamentação e não tem nada da lista do que nunca é de bebê."""
+    return bool(BABY.search(title)) and not NOT_BABY.search(title)
+
+
 DIAPER_SIZE =re.compile(r"fralda.*\b(P|M|G|tamanho [PMG]|tam\.? ?[PMG])\b", re.I)
 
 
@@ -285,7 +292,8 @@ def post_tick():
             if now - last_post < URGENT_GAP:
                 continue
             row = db.tq_urgent(theme["id"], theme["flash_discount"], URGENT_MAX_AGE)
-        while row and NOT_BABY.search(json.loads(row["payload"]).get("title", "")):
+        # entrou antes do filtro atual (ou por regra que já saiu): descarta e pega a próxima
+        while row and not _is_baby(json.loads(row["payload"]).get("title", "")):
             db.tq_done(row)  # entrou antes do filtro: descarta e pega a próxima
             row = db.tq_next(theme["id"], QUEUE_MAX_AGE, best_first=bool(pm))
         if not row:
