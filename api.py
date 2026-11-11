@@ -153,6 +153,9 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError, KeyError, TypeError, AttributeError):
                 return self._json(400, {"error": "corpo inválido"})
             return self._json(200, {"updated": done})
+        if self.path == "/api/terms/refresh":
+            # busca todos os termos de novo agora (mesmo que /buscar no bot)
+            return self._json(200, {"termos": db.reset_terms()})
         if self.path == "/api/terms/remove":
             try:
                 b = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")

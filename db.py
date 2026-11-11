@@ -358,6 +358,12 @@ def due_term(min_age_sec):
         ).fetchone()
 
 
+def reset_terms():
+    """Marca todos os termos como vencidos: o bot busca todos de novo, um por vez. Devolve quantos."""
+    with conn() as c:
+        return c.execute("UPDATE theme_terms SET last_checked = 0").rowcount
+
+
 def touch_term(term_id):
     with conn() as c:
         c.execute("UPDATE theme_terms SET last_checked = ? WHERE id = ?", (time.time(), term_id))

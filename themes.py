@@ -351,6 +351,7 @@ HELP = (
     "/promo &lt;nome&gt; [minutos] - dia de promoção: posta 1 oferta a cada ~1 min em todos os temas "
     "até a meia-noite, com o nome da promoção na mensagem. Ex.: /promo 11.11 | /promo black friday | "
     "/promo 11.11 2 (a cada ~2 min) | /promo off desliga | /promo status\n"
+    "/buscar - busca todos os termos de novo agora (quando a fila esvazia)\n"
     "/temas - lista os temas\n"
     "/sair - desliga este grupo do tema\n"
     "WhatsApp no privado com o bot: /grupos lista os grupos, /ligar &lt;Nome&gt; &lt;nº&gt; e /desligar &lt;nº&gt;\n"
@@ -436,6 +437,10 @@ def command(cmd, text, reply, ctx):
     name, _, args = rest.partition(" ")
     args = args.strip()
 
+    if cmd == "/buscar":
+        n = db.reset_terms()
+        reply(f"🔎 Buscando de novo os {n} termos agora, um por vez (Shopee e Mercado Livre). As ofertas novas entram na fila conforme chegam.")
+        return True
     if cmd == "/promo":
         reply(_promo_command(rest))
         return True
