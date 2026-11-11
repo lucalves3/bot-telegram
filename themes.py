@@ -88,7 +88,7 @@ ESSENTIALS = re.compile(
 # mais vendidos de categoria trazem coisa de adulto (shampoo L'Oréal, papel toalha): só passa o que é de bebê
 BABY = re.compile(
     r"beb[êe]|baby|infantil|kids|crian[çc]a|rec[ée]m|neonat|fralda|maternidade|amamenta|mamadeira|chupeta|"
-    r"(?:protetor|absorvente|concha)e?s? (?:de |para )?seios?|leite materno|cueiro|body|bodies|lactante|gestante|amamentar|desmame|ber[çc]o|"
+    r"(?:protetor|absorvente|concha)e?s? (?:de |para )?seios?|len[çc]os? umedecid|toalhas? umedecid|assadura|leite materno|cueiro|body|bodies|lactante|gestante|amamentar|desmame|ber[çc]o|"
     r"mordedor|babador|trocador|\bnan\b|aptamil|milupa|nestog|mucilon|huggies|pampers|babysec|personal baby|turma da m[ôo]nica|"
     r"johnson|mustela|granado beb|hipogl[óo]s|bepantol baby|dermodex|desitin|chicco|avent|lillo|\bnuk\b|\bmam\b|kuka|pom pom",
     re.I,
@@ -144,8 +144,13 @@ def check_term(term_row):
     return enqueue(theme["id"], find_offers(theme, term_row["term"]), term_row["term"])
 
 
-def find_offers(theme, term):
-    """Busca o termo (Amazon ou shopee:) e devolve as ofertas que passam nos filtros do tema."""
+PROMO_PAGES = int(os.getenv("PROMO_PAGES", "3"))  # páginas da busca da Amazon lidas no modo promoção
+
+
+def find_offers(theme, term, pages=None):
+    """Busca o termo (Amazon ou shopee:) e devolve as ofertas que passam nos filtros do tema.
+
+    pages: páginas da busca da Amazon (padrão: PROMO_PAGES no modo promoção, senão 1)."""
     offers = []
     store = "ml" if term.lower().startswith("ml:") else "other"
     if store == "ml":
@@ -161,7 +166,9 @@ def find_offers(theme, term):
     else:
         is_link = term.lower().startswith("http")
         url = scraper.normalize_url(term) if is_link else scraper.search_url(term)
-        results = scraper.fetch_listing(url, pages=1)
+        if pages is None:
+            pages = PROMO_PAGES if promo() else 1
+        results = scraper.fetch_listing(url, pages=pages)
     for p in results:
         if p["discount"] < theme["min_discount"]:
             continue  # só promoção de verdade (preço "De" riscado)
@@ -252,7 +259,7 @@ def post_tick():
         if pm:
             due = min(due, (theme["last_post_at"] or 0) + pm * 60)
         if now >= due:
-            row = db.tq_next(theme["id"], QUEUE_MAX_AGE)
+            row = db.tq_next(theme["id"], QUEUE_MAX_AGE, best_first=bool(pm))
         else:
             # fura-fila: relâmpago ou desconto alto, recém-achada, com respiro desde o último post
             last_post = theme["last_post_at"]
@@ -261,7 +268,7 @@ def post_tick():
             row = db.tq_urgent(theme["id"], theme["flash_discount"], URGENT_MAX_AGE)
         while row and NOT_BABY.search(json.loads(row["payload"]).get("title", "")):
             db.tq_done(row)  # entrou antes do filtro: descarta e pega a próxima
-            row = db.tq_next(theme["id"], QUEUE_MAX_AGE)
+            row = db.tq_next(theme["id"], QUEUE_MAX_AGE, best_first=bool(pm))
         if not row:
             continue
         p = json.loads(row["payload"])

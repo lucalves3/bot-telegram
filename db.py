@@ -437,11 +437,12 @@ def tq_urgent(theme_id, min_discount, max_age_sec):
         ).fetchone()
 
 
-def tq_next(theme_id, max_age_sec):
+def tq_next(theme_id, max_age_sec, best_first=False):
     """Melhor oferta da fila do tema; descarta as antigas (o preço já pode ter mudado).
 
     prio é -desconto; cada hora de espera custa AGE_PENALTY pontos de desconto, para uma oferta
-    fresca não ficar presa atrás de descontos maiores e sair com o preço velho."""
+    fresca não ficar presa atrás de descontos maiores e sair com o preço velho.
+    best_first (modo promoção): sem rodízio entre termos, sai a melhor oferta da fila inteira."""
     now = time.time()
     with conn() as c:
         # descartadas sem postar: esquece que foram vistas, para voltarem na próxima busca
@@ -450,6 +451,14 @@ def tq_next(theme_id, max_age_sec):
             (now - max_age_sec,),
         )
         c.execute("DELETE FROM theme_queue WHERE ts < ?", (now - max_age_sec,))
+        if best_first:
+            return c.execute(
+                """SELECT * FROM theme_queue WHERE theme_id = ?
+                   ORDER BY CASE WHEN json_extract(payload, '$.manual') = 1 THEN 0 ELSE 1 END,
+                            prio + (? - ts) / 3600.0 * ?, id
+                   LIMIT 1""",
+                (theme_id, now, AGE_PENALTY),
+            ).fetchone()
         # rodízio: primeiro as escolhidas no painel, depois o termo que está há mais tempo sem post;
         # dentro do termo, a melhor oferta
         return c.execute(

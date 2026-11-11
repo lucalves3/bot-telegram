@@ -41,7 +41,8 @@ def main():
         last[(t["theme"]["id"], t["term"])] = time.time()
         label = t["term"][:60]
         try:
-            offers = themes.find_offers(t["theme"], t["term"])
+            # modo promoção (ligado no servidor com /promo): lê mais páginas da busca
+            offers = themes.find_offers(t["theme"], t["term"], pages=themes.PROMO_PAGES if t.get("promo") else 1)
             r = requests.post(
                 f"{BASE}/api/offers", headers=HEADERS, json={"theme_id": t["theme"]["id"], "term": t["term"], "offers": offers}, timeout=30
             )

@@ -114,10 +114,13 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/themes":
             return self._json(200, [{"id": t["id"], "name": t["name"]} for t in db.list_themes()])
         if self.path == "/api/terms":
+            import themes  # aqui dentro: themes não é carregado pela API em outros pontos
+
+            promo = bool(themes.promo())  # coletor lê mais páginas da Amazon no modo promoção
             out = []
             for t in db.list_themes():
                 theme = {k: t[k] for k in THEME_KEYS}
-                out += [{"theme": theme, "term": term} for term in db.list_terms(t["id"]) if not term.lower().startswith("shopee:")]
+                out += [{"theme": theme, "term": term, "promo": promo} for term in db.list_terms(t["id"]) if not term.lower().startswith("shopee:")]
             return self._json(200, out)
         self._json(404, {"error": "não encontrado"})
 
