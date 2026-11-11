@@ -113,6 +113,21 @@ class Handler(BaseHTTPRequestHandler):
             })
         if self.path == "/api/themes":
             return self._json(200, [{"id": t["id"], "name": t["name"]} for t in db.list_themes()])
+        if self.path == "/api/queue":
+            # ofertas na fila (com título, preço e desconto) e o ritmo de postagem de cada tema
+            import themes
+
+            with db.conn() as c:
+                queue = c.execute("SELECT theme_id, payload, prio, ts FROM theme_queue ORDER BY prio").fetchall()
+            return self._json(200, {
+                "agora": time.time(),
+                "promo_min": themes.promo(),
+                "temas": [
+                    {k: t[k] for k in ("id", "name", "interval_min", "hour_start", "hour_end", "next_post_at", "last_post_at", "min_discount")}
+                    for t in db.list_themes()
+                ],
+                "fila": [{"tema": q["theme_id"], "prio": q["prio"], "ts": q["ts"], **json.loads(q["payload"])} for q in queue],
+            })
         if self.path == "/api/terms":
             import themes  # aqui dentro: themes não é carregado pela API em outros pontos
 
