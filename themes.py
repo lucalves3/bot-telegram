@@ -34,7 +34,7 @@ def next_gap(interval_min):
     return interval_min * 60 * random.uniform(1 - JITTER, 1 + JITTER)
 
 
-PROMO_DEFAULT_MIN = 2  # dia de promoção: 1 oferta a cada ~2 min (sem intervalo nenhum o WhatsApp bane)
+PROMO_DEFAULT_MIN = 1  # dia de promoção: 1 oferta a cada ~1 min (sem intervalo nenhum o WhatsApp bane)
 
 
 def promo():
@@ -100,7 +100,9 @@ NOT_BABY = re.compile(
     # palavras de bebê com outro sentido: chupeta de bateria, body splash, bico de mangueira...
     r"bateria|automotiv|ve[íi]cul|\bcarro\b|\bmoto\b|booster|\bamp\b|\d+ ?amp|alicate|ferramenta|mangueira|"
     r"body ?splash|body feminino|body (?:adulto|renda|manga longa feminino)|bodysuit|\bbico de (?:pato|mangueira|g[áa]s)|"
-    r"\bcelular\b|smartphone|notebook|\bpc\b|gamer|tatuagem|\bsexy\b|er[óo]tic",
+    r"\bcelular\b|smartphone|notebook|\bpc\b|gamer|tatuagem|\bsexy\b|er[óo]tic|"
+    # linha infantil de cabelo (cachos, liso, Salon Line), não é de bebê
+    r"cach(?:o|inho)s?\b|todecacho|meu liso|salon line|creme de pentear.*\bkids\b|\bkids\b.*creme de pentear",
     re.I,
 )
 DIAPER_SIZE =re.compile(r"fralda.*\b(P|M|G|tamanho [PMG]|tam\.? ?[PMG])\b", re.I)
@@ -307,8 +309,8 @@ HELP = (
     "/config &lt;Nome&gt; desconto=15 intervalo=25 horario=8-22 max=150 tag=seunome-20\n"
     "/config &lt;Nome&gt; relampago=40 - desconto que fura a fila e sai na hora (0 = só ofertas relâmpago)\n"
     "/config &lt;Nome&gt; convite=https://chat.whatsapp.com/... - link do grupo no fim de cada oferta (convite=0 tira)\n"
-    "/promo - dia de promoção (11.11, Black Friday): posta 1 oferta a cada ~2 min em todos os temas "
-    "até a meia-noite. /promo 1 = a cada ~1 min | /promo off desliga | /promo status\n"
+    "/promo - dia de promoção (11.11, Black Friday): posta 1 oferta a cada ~1 min em todos os temas "
+    "até a meia-noite. /promo 2 = a cada ~2 min | /promo off desliga | /promo status\n"
     "/temas - lista os temas\n"
     "/sair - desliga este grupo do tema\n"
     "WhatsApp no privado com o bot: /grupos lista os grupos, /ligar &lt;Nome&gt; &lt;nº&gt; e /desligar &lt;nº&gt;\n"
