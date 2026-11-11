@@ -34,6 +34,24 @@ def next_gap(interval_min):
     return interval_min * 60 * random.uniform(1 - JITTER, 1 + JITTER)
 
 
+PROMO_DEFAULT_MIN = 2  # dia de promoção: 1 oferta a cada ~2 min (sem intervalo nenhum o WhatsApp bane)
+
+
+def promo():
+    """Minutos entre posts no modo dia de promoção, ou None se desligado.
+
+    Liga com /promo e desliga sozinho à meia-noite (horário de Brasília)."""
+    until = float(db.get_setting("promo_until", 0) or 0)
+    if time.time() >= until:
+        return None
+    return float(db.get_setting("promo_min", PROMO_DEFAULT_MIN))
+
+
+def theme_interval(theme):
+    """Intervalo de postagem do tema em minutos (o do modo promoção, se ligado)."""
+    return promo() or theme["interval_min"]
+
+
 def term_interval():
     """Cada termo é buscado no máximo a cada TERM_CHECK_MIN minutos."""
     return int(os.getenv("TERM_CHECK_MIN", "60")) * 60
@@ -228,7 +246,12 @@ def post_tick():
         groups = db.theme_groups(theme["id"])
         if not groups:
             continue
-        if now >= theme["next_post_at"]:
+        # modo promoção: se o post agendado está mais longe que o ritmo da promoção, adianta
+        pm = promo()
+        due = theme["next_post_at"]
+        if pm:
+            due = min(due, (theme["last_post_at"] or 0) + pm * 60)
+        if now >= due:
             row = db.tq_next(theme["id"], QUEUE_MAX_AGE)
         else:
             # fura-fila: relâmpago ou desconto alto, recém-achada, com respiro desde o último post
@@ -258,7 +281,7 @@ def post_tick():
         else:
             db.tq_fail(row)
         # intervalo com variação de ±30% (ex.: 10 min vira algo entre 7 e 13), para não parecer robô
-        db.update_theme(theme["id"], last_post_at=now, next_post_at=now + next_gap(theme["interval_min"]))
+        db.update_theme(theme["id"], last_post_at=now, next_post_at=now + next_gap(theme_interval(theme)))
 
 
 def has_work():
@@ -277,6 +300,8 @@ HELP = (
     "/config &lt;Nome&gt; desconto=15 intervalo=25 horario=8-22 max=150 tag=seunome-20\n"
     "/config &lt;Nome&gt; relampago=40 - desconto que fura a fila e sai na hora (0 = só ofertas relâmpago)\n"
     "/config &lt;Nome&gt; convite=https://chat.whatsapp.com/... - link do grupo no fim de cada oferta (convite=0 tira)\n"
+    "/promo - dia de promoção (11.11, Black Friday): posta 1 oferta a cada ~2 min em todos os temas "
+    "até a meia-noite. /promo 1 = a cada ~1 min | /promo off desliga | /promo status\n"
     "/temas - lista os temas\n"
     "/sair - desliga este grupo do tema\n"
     "WhatsApp no privado com o bot: /grupos lista os grupos, /ligar &lt;Nome&gt; &lt;nº&gt; e /desligar &lt;nº&gt;\n"
@@ -295,7 +320,8 @@ def _describe(t):
         f"<b>{html.escape(t['name'])}</b>",
         f"Grupos: {tg} Telegram, {wa} WhatsApp | Fila: {queued}",
         f"Desconto mín.: {t['min_discount']}% | Máx.: {brl(t['max_total']) if t['max_total'] else 'sem limite'}",
-        f"1 oferta a cada ~{t['interval_min']} min ({round(t['interval_min'] * (1 - JITTER))}-{round(t['interval_min'] * (1 + JITTER))}), das {t['hour_start']}h às {t['hour_end']}h",
+        f"1 oferta a cada ~{t['interval_min']} min ({round(t['interval_min'] * (1 - JITTER))}-{round(t['interval_min'] * (1 + JITTER))}), das {t['hour_start']}h às {t['hour_end']}h"
+        + (f" | 🔥 PROMO: a cada ~{promo():g} min" if promo() else ""),
         "Fura-fila: ofertas relâmpago" + (f" e com {t['flash_discount']}%+ de desconto" if t["flash_discount"] else ""),
         f"Tag: {t['tag'] or 'padrão do canal'}",
         f"Convite: {html.escape(t['invite']) if t['invite'] else '(nenhum, use /config Nome convite=link)'}",
@@ -304,6 +330,38 @@ def _describe(t):
     if t["excludes"]:
         lines.append(f"Excluídas: {html.escape(t['excludes'])}")
     return "\n".join(lines)
+
+
+def _promo_command(arg):
+    """/promo [min] liga até a meia-noite; /promo off desliga; /promo status mostra."""
+    if arg in ("status", "?"):
+        pm = promo()
+        if not pm:
+            return "Modo promoção desligado. Use /promo para ligar."
+        until = datetime.fromtimestamp(float(db.get_setting("promo_until")), BRT)
+        return f"🔥 Modo promoção ligado: 1 oferta a cada ~{pm:g} min por tema, até {until:%d/%m %H:%M}."
+    if arg in ("off", "0", "desligar", "fim"):
+        db.set_setting("promo_until", 0)
+        for t in db.list_themes():  # volta ao ritmo normal contando do último post
+            db.update_theme(t["id"], next_post_at=(t["last_post_at"] or time.time()) + next_gap(t["interval_min"]))
+        return "Modo promoção desligado. Voltando ao intervalo normal de cada tema."
+    try:
+        minutes = float(arg.replace(",", ".")) if arg else PROMO_DEFAULT_MIN
+    except ValueError:
+        return "Uso: /promo [minutos] | /promo off | /promo status"
+    if not 0.5 <= minutes <= 60:
+        return "Use entre 0,5 e 60 minutos (ex.: /promo 2)."
+    now = datetime.now(BRT)
+    midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    db.set_setting("promo_min", minutes)
+    db.set_setting("promo_until", midnight.timestamp())
+    for t in db.list_themes():  # começa já, sem esperar o post agendado no ritmo normal
+        db.update_theme(t["id"], next_post_at=0)
+    return (
+        f"🔥 Modo promoção ligado: 1 oferta a cada ~{minutes:g} min por tema (±30%), "
+        f"até a meia-noite. A janela de horário de cada tema continua valendo.\n"
+        f"/promo off desliga antes."
+    )
 
 
 def _split_list(s):
@@ -316,6 +374,9 @@ def command(cmd, text, reply, ctx):
     name, _, args = rest.partition(" ")
     args = args.strip()
 
+    if cmd == "/promo":
+        reply(_promo_command(rest.lower()))
+        return True
     if cmd == "/temas":
         themes = db.list_themes()
         reply("\n\n".join(_describe(t) for t in themes) if themes else "Nenhum tema. Use /tema &lt;Nome&gt; no grupo.")
